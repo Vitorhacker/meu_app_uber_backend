@@ -4,12 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Meu App Uber Backend")
 
-# Permitir conexões do frontend
+# Permitir conexões do frontend e Railway
 origins = [
     "http://localhost",
     "http://localhost:8081",
-    "http://192.168.0.118:8081",  # IP do PC
-    "https://meuappuberfrontend.up.railway.app",  # se usar frontend hospedado
+    "http://192.168.0.118:8081",  # seu IP local
+    "https://meuappuberbackend-production.up.railway.app",  # URL do Railway
 ]
 
 app.add_middleware(
@@ -20,15 +20,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Endpoint de teste
 @app.get("/")
 async def root():
     return {"message": "Backend funcionando!"}
 
-# Endpoint para corridas
 @app.get("/corridas/")
 async def get_corridas():
     return [
-        {"id": 1, "origem": "Rua A", "destino": "Rua B", "status": "Pendente"},
-        {"id": 2, "origem": "Rua C", "destino": "Rua D", "status": "Concluída"},
+        {"id": 1, "origem": "Rua A", "destino": "Rua B"},
+        {"id": 2, "origem": "Rua C", "destino": "Rua D"}
     ]
