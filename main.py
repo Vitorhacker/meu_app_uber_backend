@@ -8,7 +8,8 @@ app = FastAPI(title="Meu App Uber Backend")
 origins = [
     "http://localhost",
     "http://localhost:8081",
-    "http://192.168.0.118:8081",  # seu IP do PC
+    "http://192.168.0.118:8081",  # IP do PC
+    "https://meuappuberfrontend.up.railway.app",  # se usar frontend hospedado
 ]
 
 app.add_middleware(
@@ -28,6 +29,6 @@ async def root():
 @app.get("/corridas/")
 async def get_corridas():
     return [
-        {"id": 1, "origem": "Rua A", "destino": "Rua B"},
-        {"id": 2, "origem": "Rua C", "destino": "Rua D"}
+        {"id": 1, "origem": "Rua A", "destino": "Rua B", "status": "Pendente"},
+        {"id": 2, "origem": "Rua C", "destino": "Rua D", "status": "Concluída"},
     ]
