@@ -1,51 +1,24 @@
 from sqlalchemy.orm import Session
-from models import Ride, RideStatus
-
-# =========================
-# Corridas
-# =========================
-def get_rides(db: Session):
-    return db.query(Ride).all()
+from models import User, Ride
+from auth import get_password_hash
 
 
-def get_ride(db: Session, ride_id: int):
-    return db.query(Ride).filter(Ride.id == ride_id).first()
+def create_user(db: Session, email: str, password: str, type: str, name: str = None):
+    hashed_password = get_password_hash(password)
+    user = User(email=email, password=hashed_password, type=type, name=name)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
-def create_ride(db: Session, origem: str, destino: str, passenger_id: int | None):
-    """
-    Cria uma nova corrida.
-    O app manda origem/destino em português, mas salvamos como origin/destination no banco.
-    """
-    ride = Ride(
-        origin=origem,
-        destination=destino,
-        passenger_id=passenger_id
-    )
+def get_user_by_email(db: Session, email: str):
+    return db.query(User).filter(User.email == email).first()
+
+
+def create_ride(db: Session, origin: str, destination: str, passenger_id: int):
+    ride = Ride(origin=origin, destination=destination, passenger_id=passenger_id, status="pending")
     db.add(ride)
     db.commit()
     db.refresh(ride)
-    return ride
-
-
-def accept_ride(db: Session, ride_id: int, driver_id: int):
-    ride = get_ride(db, ride_id)
-    if ride:
-        ride.status = RideStatus.accepted
-        ride.driver_id = driver_id
-        # Posição inicial padrão (pode vir do motorista no futuro)
-        ride.driver_lat = "-23.5505"
-        ride.driver_lng = "-46.6333"
-        db.commit()
-        db.refresh(ride)
-    return ride
-
-
-def update_driver_location(db: Session, ride_id: int, lat: float, lng: float):
-    ride = get_ride(db, ride_id)
-    if ride:
-        ride.driver_lat = str(lat)
-        ride.driver_lng = str(lng)
-        db.commit()
-        db.refresh(ride)
     return ride
