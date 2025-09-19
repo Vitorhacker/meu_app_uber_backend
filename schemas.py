@@ -2,9 +2,6 @@ from pydantic import BaseModel
 from typing import Optional
 from models import UserType, RideStatus
 
-# =========================
-# Usuários
-# =========================
 class UserCreate(BaseModel):
     email: str
     password: str
@@ -17,11 +14,9 @@ class UserOut(BaseModel):
     type: UserType
     name: Optional[str] = None
 
-    model_config = {"from_attributes": True}  # Pydantic V2
+    class Config:
+        from_attributes = True
 
-# =========================
-# Corridas (Backend)
-# =========================
 class RideCreate(BaseModel):
     origin: str
     destination: str
@@ -34,12 +29,10 @@ class RideOut(BaseModel):
     passenger_id: int
     driver_id: Optional[int] = None
 
-    model_config = {"from_attributes": True}  # Pydantic V2
+    class Config:
+        from_attributes = True
 
-# =========================
-# Corridas (Frontend/Map)
-# =========================
-class Ride(BaseModel):
+class RideFront(BaseModel):
     id: int
     origem: str
     destino: str

@@ -16,7 +16,7 @@ class User(Base):
     type = Column(Enum(UserType))
     name = Column(String, nullable=True)
 
-    rides = relationship("Ride", back_populates="user")
+    rides = relationship("Ride", back_populates="passenger_user")
 
 class RideStatus(str, enum.Enum):
     pending = "Pendente"
@@ -33,4 +33,4 @@ class Ride(Base):
     passenger_id = Column(Integer, ForeignKey("users.id"))
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
-    user = relationship("User", foreign_keys=[passenger_id], back_populates="rides")
+    passenger_user = relationship("User", foreign_keys=[passenger_id], back_populates="rides")
