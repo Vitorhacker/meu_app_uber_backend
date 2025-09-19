@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 from models import UserType, RideStatus
 
@@ -6,46 +6,47 @@ from models import UserType, RideStatus
 # Usuários
 # =========================
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str
     password: str
-    type: UserType
+    type: UserType   # motorista ou passageiro
     name: Optional[str] = None
+
 
 class UserOut(BaseModel):
     id: int
-    email: EmailStr
+    email: str
     type: UserType
     name: Optional[str] = None
 
     class Config:
         from_attributes = True
 
-# =========================
-# Login
-# =========================
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
 
 # =========================
 # Corridas
 # =========================
 class RideCreate(BaseModel):
-    origin: str
-    destination: str
-    passenger_id: int
+    origem: str
+    destino: str
+    passenger_id: Optional[int] = None
+
 
 class RideOut(BaseModel):
     id: int
-    origin: str
-    destination: str
+    origin: str       # <- usamos em inglês porque no model está "origin"
+    destination: str  # <- usamos em inglês porque no model está "destination"
     status: RideStatus
     passenger_id: int
     driver_id: Optional[int] = None
+    driverLocation: Optional[dict] = None
 
     class Config:
         from_attributes = True
+
+
+class RideMap(BaseModel):
+    id: int
+    origem: str
+    destino: str
+    status: str
+    driverLocation: Optional[dict] = None
