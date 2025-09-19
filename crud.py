@@ -1,35 +1,40 @@
 from sqlalchemy.orm import Session
-from models import Ride, RideStatus
+from models import User, Ride, RideStatus
+from schemas import UserCreate
+from auth import get_password_hash
+
+# =========================
+# Usuários
+# =========================
+def create_user(db: Session, user: UserCreate):
+    db_user = User(
+        email=user.email,
+        password=get_password_hash(user.password),
+        type=user.type,
+        name=user.name
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def get_user_by_email(db: Session, email: str):
+    return db.query(User).filter(User.email == email).first()
+
+# =========================
+# Corridas
+# =========================
+def create_ride(db: Session, origin: str, destination: str, passenger_id: int):
+    db_ride = Ride(
+        origin=origin,
+        destination=destination,
+        passenger_id=passenger_id,
+        status=RideStatus.esperando
+    )
+    db.add(db_ride)
+    db.commit()
+    db.refresh(db_ride)
+    return db_ride
 
 def get_rides(db: Session):
     return db.query(Ride).all()
-
-def get_ride(db: Session, ride_id: int):
-    return db.query(Ride).filter(Ride.id == ride_id).first()
-
-def create_ride(db: Session, origem: str, destino: str, passenger_id: int):
-    ride = Ride(origin=origem, destination=destino, passenger_id=passenger_id)
-    db.add(ride)
-    db.commit()
-    db.refresh(ride)
-    return ride
-
-def accept_ride(db: Session, ride_id: int, driver_id: int):
-    ride = get_ride(db, ride_id)
-    if ride:
-        ride.status = RideStatus.accepted
-        ride.driver_id = driver_id
-        ride.driver_lat = "-23.5505"
-        ride.driver_lng = "-46.6333"
-        db.commit()
-        db.refresh(ride)
-    return ride
-
-def update_driver_location(db: Session, ride_id: int, lat: float, lng: float):
-    ride = get_ride(db, ride_id)
-    if ride:
-        ride.driver_lat = str(lat)
-        ride.driver_lng = str(lng)
-        db.commit()
-        db.refresh(ride)
-    return ride
