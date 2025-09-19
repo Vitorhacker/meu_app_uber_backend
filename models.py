@@ -16,7 +16,8 @@ class User(Base):
     type = Column(Enum(UserType))
     name = Column(String, nullable=True)
 
-    rides = relationship("Ride", back_populates="passenger_user")
+    rides_passenger = relationship("Ride", back_populates="passenger", foreign_keys='Ride.passenger_id')
+    rides_driver = relationship("Ride", back_populates="driver", foreign_keys='Ride.driver_id')
 
 class RideStatus(str, enum.Enum):
     pending = "Pendente"
@@ -32,5 +33,8 @@ class Ride(Base):
     status = Column(Enum(RideStatus), default=RideStatus.pending)
     passenger_id = Column(Integer, ForeignKey("users.id"))
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    driver_lat = Column(String, nullable=True)
+    driver_lng = Column(String, nullable=True)
 
-    passenger_user = relationship("User", foreign_keys=[passenger_id], back_populates="rides")
+    passenger = relationship("User", foreign_keys=[passenger_id], back_populates="rides_passenger")
+    driver = relationship("User", foreign_keys=[driver_id], back_populates="rides_driver")

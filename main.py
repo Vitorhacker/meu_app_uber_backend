@@ -1,22 +1,21 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from typing import List
-from rides_data import corridas_data
-from schemas import RideFront, RideCreate
-from auth import get_password_hash
-from fastapi.params import Body
+from database import get_db, Base, engine
+from models import Ride, User
+from schemas import RideMap, RideCreate, RideOut, UserCreate, UserOut
+from crud import get_rides, get_ride, create_ride, accept_ride, update_driver_location
+from auth import authenticate_user, get_password_hash, create_access_token
 
-app = FastAPI(title="Meu App Uber Backend")
+Base.metadata.create_all(bind=engine)
 
-origins = [
-    "http://localhost:19006",
-    "https://brilliant-motivation-production.up.railway.app",
-    "*"
-]
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -24,48 +23,58 @@ app.add_middleware(
 # =========================
 # Corridas
 # =========================
-@app.get("/rides", response_model=List[RideFront])
-def listar_corridas():
-    return corridas_data
+@app.get("/rides", response_model=List[RideMap])
+def read_rides(db: Session = Depends(get_db)):
+    rides = get_rides(db)
+    result = []
+    for r in rides:
+        driverLocation = None
+        if r.driver_lat and r.driver_lng:
+            driverLocation = {"lat": float(r.driver_lat), "lng": float(r.driver_lng)}
+        result.append({
+            "id": r.id,
+            "origem": r.origin,
+            "destino": r.destination,
+            "status": r.status.value,
+            "driverLocation": driverLocation
+        })
+    return result
 
-@app.post("/rides", response_model=RideFront)
-def criar_corrida(origem: str = Body(...), destino: str = Body(...), userId: int = Body(...)):
-    novo_id = max([r["id"] for r in corridas_data]) + 1 if corridas_data else 1
-    nova = {"id": novo_id, "origem": origem, "destino": destino, "status": "Pendente", "driverLocation": None}
-    corridas_data.append(nova)
+@app.post("/rides", response_model=RideOut)
+def criar_corrida(ride: RideCreate, db: Session = Depends(get_db)):
+    nova = create_ride(db, ride.origem, ride.destino, ride.passenger_id)
     return nova
 
-@app.post("/rides/{ride_id}/accept", response_model=RideFront)
-def aceitar_corrida(ride_id: int):
-    ride = next((r for r in corridas_data if r["id"] == ride_id), None)
+@app.post("/rides/{ride_id}/accept", response_model=RideOut)
+def aceitar_corrida(ride_id: int, driver_id: int, db: Session = Depends(get_db)):
+    ride = accept_ride(db, ride_id, driver_id)
     if not ride:
         raise HTTPException(status_code=404, detail="Corrida não encontrada")
-    if ride["status"] != "Pendente":
-        raise HTTPException(status_code=400, detail="Corrida já aceita")
-    ride["status"] = "Em Andamento"
-    ride["driverLocation"] = {"lat": -23.5505, "lng": -46.6333}
     return ride
 
-@app.post("/rides/{ride_id}/update-location", response_model=RideFront)
-def atualizar_localizacao(ride_id: int, lat: float = Body(...), lng: float = Body(...)):
-    ride = next((r for r in corridas_data if r["id"] == ride_id), None)
+@app.post("/rides/{ride_id}/update-location", response_model=RideOut)
+def atualizar_local(ride_id: int, lat: float, lng: float, db: Session = Depends(get_db)):
+    ride = update_driver_location(db, ride_id, lat, lng)
     if not ride:
         raise HTTPException(status_code=404, detail="Corrida não encontrada")
-    if ride["status"] != "Em Andamento":
-        raise HTTPException(status_code=400, detail="Corrida não iniciada")
-    ride["driverLocation"] = {"lat": lat, "lng": lng}
     return ride
 
 # =========================
-# Login / Register (mock)
+# Usuário / Auth
 # =========================
+@app.post("/register", response_model=UserOut)
+def register(user: UserCreate, db: Session = Depends(get_db)):
+    hashed = get_password_hash(user.password)
+    db_user = User(email=user.email, password=hashed, type=user.type, name=user.name)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
 @app.post("/login")
-def login(email: str = Body(...), password: str = Body(...)):
-    # Retorna sucesso mock
-    return {"message": f"Usuário {email} logado com sucesso"}
-
-@app.post("/register")
-def register(name: str = Body(...), email: str = Body(...), password: str = Body(...), role: str = Body(...)):
-    # Retorna sucesso mock
-    hashed_password = get_password_hash(password)
-    return {"message": f"Usuário {name} registrado com sucesso", "password_hash": hashed_password}
+def login(email: str, password: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.password == password:
+        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
+    token = create_access_token({"sub": user.id})
+    return {"access_token": token, "token_type": "bearer"}
