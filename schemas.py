@@ -8,7 +8,7 @@ from models import UserType, RideStatus
 class UserCreate(BaseModel):
     email: str
     password: str
-    type: UserType        # 'driver' ou 'passenger'
+    type: UserType
     name: Optional[str] = None
 
 class UserOut(BaseModel):
@@ -17,8 +17,7 @@ class UserOut(BaseModel):
     type: UserType
     name: Optional[str] = None
 
-    class Config:
-        from_attributes = True  # OK no Pydantic v2
+    model_config = {"from_attributes": True}  # Pydantic V2
 
 # =========================
 # Corridas (Backend)
@@ -35,8 +34,7 @@ class RideOut(BaseModel):
     passenger_id: int
     driver_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True  # trocado orm_mode -> from_attributes
+    model_config = {"from_attributes": True}  # Pydantic V2
 
 # =========================
 # Corridas (Frontend/Map)
