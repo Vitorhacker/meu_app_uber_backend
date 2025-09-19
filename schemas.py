@@ -18,7 +18,7 @@ class UserOut(BaseModel):
     name: Optional[str] = None
 
     class Config:
-      from_attributes = True
+        from_attributes = True  # OK no Pydantic v2
 
 # =========================
 # Corridas (Backend)
@@ -36,7 +36,7 @@ class RideOut(BaseModel):
     driver_id: Optional[int] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # trocado orm_mode -> from_attributes
 
 # =========================
 # Corridas (Frontend/Map)
