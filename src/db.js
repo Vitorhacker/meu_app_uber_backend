@@ -1,4 +1,5 @@
-const { Pool } = require("pg");
+import pkg from "pg";
+const { Pool } = pkg;
 
 let pool;
 
@@ -33,4 +34,4 @@ pool
   .then(() => console.log("✅ Conectado ao PostgreSQL"))
   .catch((err) => console.error("❌ Erro ao conectar no PostgreSQL", err));
 
-module.exports = pool;
+export default pool;

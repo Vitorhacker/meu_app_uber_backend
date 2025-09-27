@@ -1,4 +1,3 @@
-// src/controllers/authController.js
 import axios from "axios";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
@@ -83,41 +82,3 @@ export const login = async (req, res) => {
     }
 
     // Gera token JWT
-    const token = jwt.sign({ id: user.rows[0].id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-    });
-
-    return res.json({
-      message: "Login realizado com sucesso",
-      token,
-      user: {
-        id: user.rows[0].id,
-        nome: user.rows[0].nome,
-        email: user.rows[0].email,
-      },
-    });
-  } catch (err) {
-    console.error("❌ Erro no login:", err);
-    return res.status(500).json({ error: "Erro interno no servidor" });
-  }
-};
-
-/**
- * Confirmação de e-mail (usada apenas se ENABLE_EMAIL_CONFIRMATION=true)
- */
-export const confirmEmail = async (req, res) => {
-  try {
-    const { token } = req.params;
-
-    // Verifica token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Atualiza usuário como confirmado
-    await db.query("UPDATE users SET confirmado = true WHERE id = $1", [decoded.id]);
-
-    return res.json({ message: "E-mail confirmado com sucesso!" });
-  } catch (err) {
-    console.error("❌ Erro na confirmação de e-mail:", err);
-    return res.status(400).json({ error: "Token inválido ou expirado." });
-  }
-};
