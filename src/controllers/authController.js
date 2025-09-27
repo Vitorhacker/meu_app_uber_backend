@@ -1,7 +1,8 @@
+// src/controllers/authController.js
 import axios from "axios";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
-import db from "../config/db.js";
+import db from "../db.js"; // ✅ Corrigido o caminho do db.js
 
 /**
  * Registro de usuário
@@ -104,7 +105,7 @@ export const login = async (req, res) => {
 /**
  * Confirmação de e-mail (usada apenas se ENABLE_EMAIL_CONFIRMATION=true)
  */
-export const confirmarEmail = async (req, res) => {
+export const confirm = async (req, res) => {
   try {
     const { token } = req.params;
 
