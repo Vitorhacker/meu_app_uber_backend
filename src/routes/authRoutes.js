@@ -1,13 +1,16 @@
-import express from "express";
-import { register, login, confirmEmail } from "../controllers/authController.js";
-
+// src/routes/authRoutes.js
+const express = require("express");
 const router = express.Router();
+const authController = require("../controllers/authController");
 
-// Registro e login
-router.post("/register", register);
-router.post("/login", login);
+// Registro e login não exigem token
+router.post("/register", authController.register);
+router.post("/login", authController.login);
 
-// Confirmação de e-mail
-router.get("/confirm/:token", confirmEmail);
+// Confirmação de e-mail/código
+router.post("/confirm", authController.confirm);
 
-export default router;
+// Reenvio de código de confirmação
+router.post("/resend-code", authController.resendCode);
+
+module.exports = router;

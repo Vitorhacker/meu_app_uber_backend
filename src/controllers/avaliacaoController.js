@@ -1,8 +1,8 @@
 // src/controllers/avaliacaoController.js
-import pool from "../db.js";
+const pool = require("../db");
 
 // Criar avaliação
-export const create = async (req, res) => {
+exports.create = async (req, res) => {
   try {
     const { corrida_id, avaliador_id, nota, comentario } = req.body;
     if (!corrida_id || !avaliador_id || !nota) {
@@ -24,7 +24,7 @@ export const create = async (req, res) => {
 };
 
 // Listar avaliações de uma corrida
-export const getByCorrida = async (req, res) => {
+exports.getByCorrida = async (req, res) => {
   try {
     const { corrida_id } = req.params;
     const result = await pool.query("SELECT * FROM avaliacoes WHERE corrida_id = $1", [corrida_id]);

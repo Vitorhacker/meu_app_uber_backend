@@ -1,29 +1,37 @@
-import express from "express";
-import cors from "cors";
-import morgan from "morgan";
-import dotenv from "dotenv";
-import db from "./db.js";
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+require("dotenv").config();
+const db = require("./db");
 
-import authRoutes from "./routes/authRoutes.js";
-import usuarioRoutes from "./routes/usuarioRoutes.js";
-import corridaRoutes from "./routes/corridaRoutes.js";
-import pagamentoRoutes from "./routes/pagamentoRoutes.js";
-import avaliacaoRoutes from "./routes/avaliacaoRoutes.js";
-
-dotenv.config();
+const authRoutes = require("./routes/authRoutes");
+const usuarioRoutes = require("./routes/usuarioRoutes");
+const corridaRoutes = require("./routes/corridaRoutes");
+const pagamentoRoutes = require("./routes/pagamentoRoutes");
+const avaliacaoRoutes = require("./routes/avaliacaoRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 8081;
 
-// ==================== CORS (liberado) ====================
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
+app.use(cors());
 app.use(express.json());
+if (process.env.ENABLE_REQUEST_LOGS === "true") {
+  app.use(morgan(process.env.LOG_LEVEL || "dev"));
+}
 
-// =======
+app.use("/api/auth", authRoutes);
+app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/corridas", corridaRoutes);
+app.use("/api/pagamentos", pagamentoRoutes);
+app.use("/api/avaliacoes", avaliacaoRoutes);
+
+app.get("/", (req, res) => res.send("🚀 Backend rodando"));
+
+app.use((err, req, res, next) => {
+  console.error("Erro não tratado:", err);
+  res.status(500).json({ error: "Erro interno do servidor" });
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
