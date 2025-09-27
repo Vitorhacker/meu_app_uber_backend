@@ -1,0 +1,17 @@
+{
+  "hostType": "lan",
+  "lanType": "ip",
+  "dev": true,
+  "minify": false,
+  "urlRandomness": null,
+  "https": false
+<<<<<<< HEAD
+=======
+DEV=true
+PICPAY_CLIENT_ID=e2dd857f-793e-4e40-bdc1-61c01baba740
+PICPAY_CLIENT_SECRET=7X1BpJWzpsCiXDacryPfemvksCV4J57P
+PICPAY_CALLBACK_URL=https://meusite.com/callback
+PICPAY_RETURN_URL=https://meusite.com/sucesso
+
+>>>>>>> minhas-alteracoes
+}

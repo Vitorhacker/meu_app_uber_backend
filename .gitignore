@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+=======
+*.db
+.env
+=======
+>>>>>>> minhas-alteracoes
+*.pyo
+*.pyd
+*.sqlite3
+
+# Segredos do Google
+client_secret_*.json
+
+# Virtualenv
+venv/
+.venv/
+.env
+
+# Build / Dist
+dist/
+build/
+*.egg-info/
+=======
+>>>>>>> 9659c9a (Backend inicial do meu_app_uber)
+
