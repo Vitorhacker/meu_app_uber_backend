@@ -8,6 +8,9 @@ const nodemailer = require("nodemailer");
 const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
+// 🔧 Toggle global: ligar/desligar confirmação por e-mail
+const FORCE_EMAIL_CONFIRMATION = false; // true = exige confirmação, false = acesso livre
+
 // Função real de envio de e-mail com Nodemailer
 async function sendEmail(to, subject, text) {
   try {
@@ -37,40 +40,61 @@ async function sendEmail(to, subject, text) {
 
 exports.register = async (req, res) => {
   try {
-    const { nome, email, senha, role } = req.body;
-    if (!nome || !email || !senha) {
+    const { nome, email, cpf, senha, role } = req.body;
+    if (!nome || !email || !cpf || !senha) {
       return res.status(400).json({ error: "Dados incompletos" });
     }
 
-    const exists = await pool.query("SELECT id FROM usuarios WHERE email = $1", [email]);
-    if (exists.rows.length > 0) {
+    // Verifica duplicidade de e-mail
+    const existsEmail = await pool.query("SELECT id FROM usuarios WHERE email = $1", [email]);
+    if (existsEmail.rows.length > 0) {
       return res.status(400).json({ error: "E-mail já cadastrado" });
     }
 
+    // Verifica duplicidade de CPF
+    const existsCpf = await pool.query("SELECT id FROM usuarios WHERE cpf = $1", [cpf]);
+    if (existsCpf.rows.length > 0) {
+      return res.status(400).json({ error: "CPF já cadastrado" });
+    }
+
     const hashed = await bcrypt.hash(senha, 10);
+    const status = FORCE_EMAIL_CONFIRMATION ? "pending" : "active";
 
     const q = `
-      INSERT INTO usuarios (nome, email, senha, role, status)
-      VALUES ($1,$2,$3,$4,'pending')
-      RETURNING id, nome, email, role, status, created_at
+      INSERT INTO usuarios (nome, email, cpf, senha, role, status)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      RETURNING id, nome, email, cpf, role, status, created_at
     `;
-    const result = await pool.query(q, [nome, email, hashed, role || "passageiro"]);
+    const result = await pool.query(q, [nome, email, cpf, hashed, role || "passageiro", status]);
     const user = result.rows[0];
 
-    // Gera código de confirmação
-    const code = crypto.randomInt(100000, 999999).toString();
-    await pool.query(
-      `INSERT INTO confirmacoes_email (usuario_id, codigo, usado, expiracao)
-       VALUES ($1,$2,false,NOW() + interval '15 minutes')`,
-      [user.id, code]
-    );
+    if (FORCE_EMAIL_CONFIRMATION) {
+      // Gera código de confirmação
+      const code = crypto.randomInt(100000, 999999).toString();
+      await pool.query(
+        `INSERT INTO confirmacoes_email (usuario_id, codigo, usado, expiracao)
+         VALUES ($1,$2,false,NOW() + interval '15 minutes')`,
+        [user.id, code]
+      );
 
-    await sendEmail(user.email, "Confirme sua conta", `Seu código é: ${code}`);
+      await sendEmail(user.email, "Confirme sua conta", `Seu código é: ${code}`);
 
-    res.status(201).json({ success: true, message: "Usuário registrado. Confirme o e-mail.", user });
+      return res.status(201).json({
+        success: true,
+        message: "Usuário registrado. Confirme o e-mail.",
+        user,
+      });
+    }
+
+    // Se não exige confirmação → já pode logar
+    res.status(201).json({
+      success: true,
+      message: "Usuário registrado com sucesso!",
+      user,
+    });
   } catch (err) {
     console.error("[auth.register]", err);
-    res.status(500).json({ error: "Falha no envio de e-mail", details: err.toString() });
+    res.status(500).json({ error: "Erro no servidor", details: err.toString() });
   }
 };
 
@@ -90,7 +114,7 @@ exports.login = async (req, res) => {
     const ok = await bcrypt.compare(senha, user.senha);
     if (!ok) return res.status(400).json({ error: "Senha inválida" });
 
-    if (user.status === "pending") {
+    if (FORCE_EMAIL_CONFIRMATION && user.status === "pending") {
       return res.json({
         status: "pending",
         message: "Confirmação de e-mail pendente",
@@ -109,6 +133,7 @@ exports.login = async (req, res) => {
         id: user.id,
         nome: user.nome,
         email: user.email,
+        cpf: user.cpf,
         role: user.role,
         status: user.status,
       },
@@ -120,6 +145,10 @@ exports.login = async (req, res) => {
 };
 
 exports.confirm = async (req, res) => {
+  if (!FORCE_EMAIL_CONFIRMATION) {
+    return res.status(400).json({ error: "Confirmação de e-mail está desativada." });
+  }
+
   try {
     const { email, code } = req.body;
     if (!email || !code) {
@@ -166,6 +195,10 @@ exports.confirm = async (req, res) => {
 };
 
 exports.resendCode = async (req, res) => {
+  if (!FORCE_EMAIL_CONFIRMATION) {
+    return res.status(400).json({ error: "Reenvio de código está desativado." });
+  }
+
   try {
     const { email } = req.body;
     if (!email) {
