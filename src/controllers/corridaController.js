@@ -20,10 +20,15 @@ exports.create = async (req, res) => {
       destino,
       preco,
       categoria,
-      "busca", // status inicial igual ao frontend
+      "busca" // status inicial
     ]);
 
-    res.status(201).json({ data: r.rows[0] });
+    const corrida = r.rows[0];
+
+    res.status(201).json({
+      data: corrida,
+      motorista: null
+    });
   } catch (err) {
     console.error("❌ Erro create corrida:", err);
     res.status(500).json({ error: "Erro ao criar corrida" });
@@ -33,8 +38,30 @@ exports.create = async (req, res) => {
 // Listar todas corridas
 exports.list = async (req, res) => {
   try {
-    const r = await pool.query("SELECT * FROM corridas ORDER BY created_at DESC");
-    res.json({ total: r.rowCount, data: r.rows });
+    const q = `
+      SELECT c.*, 
+             m.id as motorista_id, m.nome as motorista_nome, m.email as motorista_email,
+             m.cpf as motorista_cpf, m.telefone as motorista_telefone
+      FROM corridas c
+      LEFT JOIN motoristas m ON c.motorista_id = m.id
+      ORDER BY c.created_at DESC
+    `;
+    const r = await pool.query(q);
+
+    const data = r.rows.map(row => ({
+      ...row,
+      motorista: row.motorista_id
+        ? {
+            id: row.motorista_id,
+            nome: row.motorista_nome,
+            email: row.motorista_email,
+            cpf: row.motorista_cpf,
+            telefone: row.motorista_telefone
+          }
+        : null
+    }));
+
+    res.json({ total: data.length, data });
   } catch (err) {
     console.error("❌ Erro list corridas:", err);
     res.status(500).json({ error: "Erro ao listar corridas" });
@@ -45,11 +72,34 @@ exports.list = async (req, res) => {
 exports.get = async (req, res) => {
   const { id } = req.params;
   try {
-    const r = await pool.query("SELECT * FROM corridas WHERE id = $1", [id]);
+    const q = `
+      SELECT c.*, 
+             m.id as motorista_id, m.nome as motorista_nome, m.email as motorista_email,
+             m.cpf as motorista_cpf, m.telefone as motorista_telefone
+      FROM corridas c
+      LEFT JOIN motoristas m ON c.motorista_id = m.id
+      WHERE c.id = $1
+    `;
+    const r = await pool.query(q, [id]);
     if (r.rows.length === 0) {
       return res.status(404).json({ error: "Corrida não encontrada" });
     }
-    res.json({ data: r.rows[0] });
+
+    const row = r.rows[0];
+    const corrida = {
+      ...row,
+      motorista: row.motorista_id
+        ? {
+            id: row.motorista_id,
+            nome: row.motorista_nome,
+            email: row.motorista_email,
+            cpf: row.motorista_cpf,
+            telefone: row.motorista_telefone
+          }
+        : null
+    };
+
+    res.json({ data: corrida });
   } catch (err) {
     console.error("❌ Erro get corrida:", err);
     res.status(500).json({ error: "Erro ao buscar corrida" });
@@ -75,14 +125,25 @@ exports.assignDriver = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
     }
 
-    res.json({ data: r.rows[0] });
+    const corrida = r.rows[0];
+
+    // busca dados do motorista
+    const m = await pool.query(
+      "SELECT id, nome, email, cpf, telefone FROM motoristas WHERE id=$1",
+      [motorista_id]
+    );
+
+    res.json({
+      data: corrida,
+      motorista: m.rows.length ? m.rows[0] : null
+    });
   } catch (err) {
     console.error("❌ Erro assignDriver:", err);
     res.status(500).json({ error: "Erro ao atribuir motorista" });
   }
 };
 
-// Iniciar corrida (quando motorista começa de fato)
+// Iniciar corrida
 exports.start = async (req, res) => {
   const { id } = req.params;
 
@@ -98,7 +159,7 @@ exports.start = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
     }
 
-    res.json({ data: r.rows[0] });
+    res.json({ data: r.rows[0], motorista: null });
   } catch (err) {
     console.error("❌ Erro start corrida:", err);
     res.status(500).json({ error: "Erro ao iniciar corrida" });
@@ -121,7 +182,7 @@ exports.finish = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
     }
 
-    res.json({ data: r.rows[0] });
+    res.json({ data: r.rows[0], motorista: null });
   } catch (err) {
     console.error("❌ Erro finish corrida:", err);
     res.status(500).json({ error: "Erro ao finalizar corrida" });

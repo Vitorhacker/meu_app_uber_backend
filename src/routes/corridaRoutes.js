@@ -1,11 +1,28 @@
-const express = require('express');
+// src/routes/corridaRoutes.js
+const express = require("express");
 const router = express.Router();
-const ctrl = require('../controllers/corridaController');
+const ctrl = require("../controllers/corridaController");
 
-router.post('/', ctrl.create);
-router.get('/', ctrl.list);
-router.get('/:id', ctrl.get);
-router.put('/:id/assign', ctrl.assignDriver);
-router.put('/:id/finish', ctrl.finish);
+// ======================
+// ROTAS DE CORRIDAS
+// ======================
+
+// Criar corrida (passageiro solicita)
+router.post("/", ctrl.create);
+
+// Listar todas corridas
+router.get("/", ctrl.list);
+
+// Buscar corrida por ID
+router.get("/:id", ctrl.get);
+
+// Atribuir motorista à corrida
+router.put("/:id/assign", ctrl.assignDriver);
+
+// Iniciar corrida (motorista iniciou)
+router.put("/:id/start", ctrl.start);
+
+// Finalizar corrida
+router.put("/:id/finish", ctrl.finish);
 
 module.exports = router;
