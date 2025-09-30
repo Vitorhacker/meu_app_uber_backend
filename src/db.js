@@ -1,36 +1,25 @@
 const { Pool } = require("pg");
+const dotenv = require("dotenv");
 
-let pool;
+dotenv.config();
 
+let connectionString;
 if (process.env.DATABASE_URL) {
   console.log("🌐 Usando DATABASE_URL (Railway/Produção)");
-
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    min: parseInt(process.env.PGPOOL_MIN || "2", 10),
-    max: parseInt(process.env.PGPOOL_MAX || "10", 10),
-    idleTimeoutMillis: parseInt(process.env.PGPOOL_IDLE_TIMEOUT || "30000", 10),
-  });
+  connectionString = process.env.DATABASE_URL;
 } else {
-  console.log("💻 Usando configuração local do PostgreSQL");
-
-  pool = new Pool({
-    user: process.env.PGUSER,
-    host: process.env.PGHOST || "localhost",
-    database: process.env.PGDATABASE,
-    password: process.env.PGPASSWORD,
-    port: process.env.PGPORT ? parseInt(process.env.PGPORT, 10) : 5432,
-    ssl: false,
-    min: parseInt(process.env.PGPOOL_MIN || "2", 10),
-    max: parseInt(process.env.PGPOOL_MAX || "10", 10),
-    idleTimeoutMillis: parseInt(process.env.PGPOOL_IDLE_TIMEOUT || "30000", 10),
-  });
+  console.log("💻 Usando configuração local do banco");
+  connectionString = `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
 }
 
-pool
-  .connect()
-  .then(() => console.log("✅ Conectado ao PostgreSQL"))
-  .catch((err) => console.error("❌ Erro ao conectar no PostgreSQL", err));
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false,
+});
+
+pool.on("error", (err) => {
+  console.error("❌ Erro inesperado no pool do PostgreSQL:", err);
+  process.exit(-1);
+});
 
 module.exports = pool;

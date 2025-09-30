@@ -2,15 +2,25 @@
 const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/authController");
+const { verifyToken } = require("../middlewares/authMiddleware");
 
-// Registro e login não exigem token
-router.post("/register", authController.register);
-router.post("/login", authController.login);
+// ======================
+// PASSAGEIRO
+// ======================
+router.post("/register", authController.registerPassenger);
+router.post("/login", authController.loginPassenger);
 
-// Confirmação de e-mail/código
-router.post("/confirm", authController.confirm);
+// ======================
+// MOTORISTA
+// ======================
+router.post("/registerdrive", authController.registerDriver);
+router.post("/logindriver", authController.loginDriver);
 
-// Reenvio de código de confirmação
-router.post("/resend-code", authController.resendCode);
+// ======================
+// PERFIL, REFRESH e LOGOUT
+// ======================
+router.get("/me", verifyToken, authController.getProfile);
+router.post("/refresh", verifyToken, authController.refreshToken);
+router.post("/logout", verifyToken, authController.logout);
 
 module.exports = router;

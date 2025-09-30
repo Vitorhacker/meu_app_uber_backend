@@ -2,16 +2,25 @@
 const express = require("express");
 const router = express.Router();
 const usuarioController = require("../controllers/usuarioController");
-const { checkAuth, checkRole } = require("../middlewares/authMiddleware");
+const { verifyToken, requireRole } = require("../middlewares/authMiddleware");
 
-// Apenas admins podem listar todos os usuários
-router.get("/", checkAuth, checkRole("admin"), usuarioController.getAll);
+// ==============================
+// ROTAS DE USUÁRIOS (apenas admin pode gerenciar todos os usuários)
+// ==============================
 
-// Usuário autenticado pode ver e atualizar seu próprio perfil
-router.get("/:id", checkAuth, usuarioController.getById);
-router.put("/:id", checkAuth, usuarioController.update);
+// Listar usuários (com paginação e filtro por role)
+router.get("/", verifyToken, requireRole("admin"), usuarioController.list);
 
-// Apenas admin pode deletar usuário
-router.delete("/:id", checkAuth, checkRole("admin"), usuarioController.remove);
+// Obter usuário por ID
+router.get("/:id", verifyToken, requireRole("admin"), usuarioController.get);
+
+// Criar novo usuário
+router.post("/", verifyToken, requireRole("admin"), usuarioController.create);
+
+// Atualizar usuário existente
+router.put("/:id", verifyToken, requireRole("admin"), usuarioController.update);
+
+// Deletar usuário (soft delete)
+router.delete("/:id", verifyToken, requireRole("admin"), usuarioController.remove);
 
 module.exports = router;

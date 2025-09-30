@@ -1,235 +1,211 @@
 // src/controllers/authController.js
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const pool = require("../db");
-const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const JWT_SECRET = process.env.JWT_SECRET || "secreta-super-forte";
 
-// 🔧 Toggle global: ligar/desligar confirmação por e-mail
-const FORCE_EMAIL_CONFIRMATION = false; // true = exige confirmação, false = acesso livre
-
-// Função real de envio de e-mail com Nodemailer
-async function sendEmail(to, subject, text) {
-  try {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      secure: false, // STARTTLS
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-
-    await transporter.sendMail({
-      from: `"Flash App" <${process.env.SMTP_USER}>`,
-      to,
-      subject,
-      text,
-    });
-
-    console.log("📧 E-mail enviado com sucesso para:", to);
-  } catch (err) {
-    console.error("❌ Erro no envio de e-mail:", err);
-    throw new Error("Falha no envio de e-mail");
-  }
+// ========================================
+// Função auxiliar: gerar token JWT
+// ========================================
+function generateToken(user) {
+  return jwt.sign(
+    { id: user.id, role: user.role },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
 
-exports.register = async (req, res) => {
+// ========================================
+// PASSAGEIRO - Registro
+// ========================================
+exports.registerPassenger = async (req, res) => {
+  const { nome, email, senha } = req.body;
+
   try {
-    const { nome, email, cpf, senha, role } = req.body;
-    if (!nome || !email || !cpf || !senha) {
-      return res.status(400).json({ error: "Dados incompletos" });
-    }
+    const hashedPassword = await bcrypt.hash(senha, 10);
 
-    // Verifica duplicidade de e-mail
-    const existsEmail = await pool.query("SELECT id FROM usuarios WHERE email = $1", [email]);
-    if (existsEmail.rows.length > 0) {
-      return res.status(400).json({ error: "E-mail já cadastrado" });
-    }
+    const result = await pool.query(
+      `INSERT INTO usuario (nome, email, senha, role, created_at)
+       VALUES ($1, $2, $3, 'passageiro', NOW())
+       RETURNING id, nome, email, role, created_at`,
+      [nome, email, hashedPassword]
+    );
 
-    // Verifica duplicidade de CPF
-    const existsCpf = await pool.query("SELECT id FROM usuarios WHERE cpf = $1", [cpf]);
-    if (existsCpf.rows.length > 0) {
-      return res.status(400).json({ error: "CPF já cadastrado" });
-    }
-
-    const hashed = await bcrypt.hash(senha, 10);
-    const status = FORCE_EMAIL_CONFIRMATION ? "pending" : "active";
-
-    const q = `
-      INSERT INTO usuarios (nome, email, cpf, senha, role, status)
-      VALUES ($1,$2,$3,$4,$5,$6)
-      RETURNING id, nome, email, cpf, role, status, created_at
-    `;
-    const result = await pool.query(q, [nome, email, cpf, hashed, role || "passageiro", status]);
     const user = result.rows[0];
+    const token = generateToken(user);
 
-    if (FORCE_EMAIL_CONFIRMATION) {
-      // Gera código de confirmação
-      const code = crypto.randomInt(100000, 999999).toString();
-      await pool.query(
-        `INSERT INTO confirmacoes_email (usuario_id, codigo, usado, expiracao)
-         VALUES ($1,$2,false,NOW() + interval '15 minutes')`,
-        [user.id, code]
-      );
-
-      await sendEmail(user.email, "Confirme sua conta", `Seu código é: ${code}`);
-
-      return res.status(201).json({
-        success: true,
-        message: "Usuário registrado. Confirme o e-mail.",
-        user,
-      });
-    }
-
-    // Se não exige confirmação → já pode logar
-    res.status(201).json({
-      success: true,
-      message: "Usuário registrado com sucesso!",
-      user,
-    });
+    return res.status(201).json({ user, token });
   } catch (err) {
-    console.error("[auth.register]", err);
-    res.status(500).json({ error: "Erro no servidor", details: err.toString() });
+    console.error("Erro ao registrar passageiro:", err);
+    return res.status(500).json({ error: "Erro ao registrar passageiro" });
   }
 };
 
-exports.login = async (req, res) => {
-  try {
-    const { email, senha } = req.body;
-    if (!email || !senha) {
-      return res.status(400).json({ error: "Dados incompletos" });
-    }
+// ========================================
+// PASSAGEIRO - Login
+// ========================================
+exports.loginPassenger = async (req, res) => {
+  const { email, senha } = req.body;
 
-    const result = await pool.query("SELECT * FROM usuarios WHERE email = $1", [email]);
+  try {
+    const result = await pool.query(
+      "SELECT * FROM usuario WHERE email = $1 AND role = 'passageiro'",
+      [email]
+    );
+
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: "Usuário não encontrado" });
+      return res.status(404).json({ error: "Passageiro não encontrado" });
     }
 
     const user = result.rows[0];
-    const ok = await bcrypt.compare(senha, user.senha);
-    if (!ok) return res.status(400).json({ error: "Senha inválida" });
+    const senhaOk = await bcrypt.compare(senha, user.senha);
 
-    if (FORCE_EMAIL_CONFIRMATION && user.status === "pending") {
-      return res.json({
-        status: "pending",
-        message: "Confirmação de e-mail pendente",
-      });
+    if (!senhaOk) {
+      return res.status(401).json({ error: "Senha incorreta" });
     }
 
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
+    const token = generateToken(user);
 
-    res.json({
+    return res.json({
+      user: { id: user.id, nome: user.nome, email: user.email, role: user.role },
       token,
-      user: {
-        id: user.id,
-        nome: user.nome,
-        email: user.email,
-        cpf: user.cpf,
-        role: user.role,
-        status: user.status,
-      },
     });
   } catch (err) {
-    console.error("[auth.login]", err);
-    res.status(500).json({ error: "Erro no servidor" });
+    console.error("Erro no login do passageiro:", err);
+    return res.status(500).json({ error: "Erro ao fazer login" });
   }
 };
 
-exports.confirm = async (req, res) => {
-  if (!FORCE_EMAIL_CONFIRMATION) {
-    return res.status(400).json({ error: "Confirmação de e-mail está desativada." });
-  }
+// ========================================
+// MOTORISTA - Registro
+// ========================================
+exports.registerDriver = async (req, res) => {
+  const { nome, email, senha } = req.body;
 
   try {
-    const { email, code } = req.body;
-    if (!email || !code) {
-      return res.status(400).json({ error: "E-mail e código são obrigatórios" });
-    }
+    const hashedPassword = await bcrypt.hash(senha, 10);
 
-    const userResult = await pool.query("SELECT id, status FROM usuarios WHERE email = $1", [email]);
-    if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: "Usuário não encontrado" });
-    }
-    const user = userResult.rows[0];
-
-    if (user.status !== "pending") {
-      return res.status(400).json({ error: "Usuário já está ativo" });
-    }
-
-    const codeResult = await pool.query(
-      `SELECT id, expiracao, usado FROM confirmacoes_email 
-       WHERE usuario_id = $1 AND codigo = $2
-       ORDER BY created_at DESC LIMIT 1`,
-      [user.id, code]
+    const result = await pool.query(
+      `INSERT INTO usuario (nome, email, senha, role, created_at)
+       VALUES ($1, $2, $3, 'motorista', NOW())
+       RETURNING id, nome, email, role, created_at`,
+      [nome, email, hashedPassword]
     );
 
-    if (codeResult.rows.length === 0) {
-      return res.status(400).json({ error: "Código inválido" });
-    }
+    const user = result.rows[0];
+    const token = generateToken(user);
 
-    const confirm = codeResult.rows[0];
-    if (confirm.usado) {
-      return res.status(400).json({ error: "Código já utilizado" });
-    }
-    if (new Date(confirm.expiracao) < new Date()) {
-      return res.status(400).json({ error: "Código expirado" });
-    }
-
-    await pool.query("UPDATE confirmacoes_email SET usado = true WHERE id = $1", [confirm.id]);
-    await pool.query("UPDATE usuarios SET status = 'active' WHERE id = $1", [user.id]);
-
-    res.json({ success: true, message: "Conta confirmada com sucesso" });
+    return res.status(201).json({ user, token });
   } catch (err) {
-    console.error("[auth.confirm]", err);
-    res.status(500).json({ error: "Erro no servidor" });
+    console.error("Erro ao registrar motorista:", err);
+    return res.status(500).json({ error: "Erro ao registrar motorista" });
   }
 };
 
-exports.resendCode = async (req, res) => {
-  if (!FORCE_EMAIL_CONFIRMATION) {
-    return res.status(400).json({ error: "Reenvio de código está desativado." });
-  }
+// ========================================
+// MOTORISTA - Login
+// ========================================
+exports.loginDriver = async (req, res) => {
+  const { email, senha } = req.body;
 
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "E-mail obrigatório" });
-    }
+    const result = await pool.query(
+      "SELECT * FROM usuario WHERE email = $1 AND role = 'motorista'",
+      [email]
+    );
 
-    const result = await pool.query("SELECT id, status FROM usuarios WHERE email = $1", [email]);
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: "Usuário não encontrado" });
+      return res.status(404).json({ error: "Motorista não encontrado" });
     }
 
     const user = result.rows[0];
-    if (user.status !== "pending") {
-      return res.status(400).json({ error: "Usuário já está ativo" });
+    const senhaOk = await bcrypt.compare(senha, user.senha);
+
+    if (!senhaOk) {
+      return res.status(401).json({ error: "Senha incorreta" });
     }
 
-    const code = crypto.randomInt(100000, 999999).toString();
-    await pool.query(
-      `INSERT INTO confirmacoes_email (usuario_id, codigo, usado, expiracao)
-       VALUES ($1, $2, false, NOW() + interval '15 minutes')`,
-      [user.id, code]
-    );
+    const token = generateToken(user);
 
-    await sendEmail(email, "Reenvio de Código de Confirmação", `Seu novo código é: ${code}`);
-
-    res.json({ success: true, message: "Novo código enviado para o e-mail informado." });
+    return res.json({
+      user: { id: user.id, nome: user.nome, email: user.email, role: user.role },
+      token,
+    });
   } catch (err) {
-    console.error("[auth.resendCode]", err);
-    res.status(500).json({ error: "Erro no servidor" });
+    console.error("Erro no login do motorista:", err);
+    return res.status(500).json({ error: "Erro ao fazer login" });
   }
 };
 
-// Exporta também sendEmail para testes manuais
-exports.sendEmail = sendEmail;
+// ========================================
+// PERFIL - Usuário logado
+// ========================================
+exports.getProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      "SELECT id, nome, email, role, created_at FROM usuario WHERE id = $1",
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Erro ao buscar perfil:", err);
+    return res.status(500).json({ error: "Erro interno no servidor" });
+  }
+};
+
+// ========================================
+// REFRESH TOKEN
+// ========================================
+exports.refreshToken = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      "SELECT id, nome, email, role FROM usuario WHERE id = $1",
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    const user = result.rows[0];
+    const newToken = generateToken(user);
+
+    return res.json({ token: newToken });
+  } catch (err) {
+    console.error("Erro ao renovar token:", err);
+    return res.status(500).json({ error: "Erro ao renovar token" });
+  }
+};
+
+// ========================================
+// LOGOUT - Invalida o token atual
+// ========================================
+exports.logout = async (req, res) => {
+  const token = req.headers["authorization"]?.replace("Bearer ", "");
+
+  if (!token) {
+    return res.status(400).json({ error: "Token não fornecido" });
+  }
+
+  try {
+    await pool.query(
+      "INSERT INTO token_blacklist (token, user_id) VALUES ($1, $2)",
+      [token, req.user.id]
+    );
+
+    return res.json({ message: "Logout realizado com sucesso" });
+  } catch (err) {
+    console.error("Erro no logout:", err);
+    return res.status(500).json({ error: "Erro ao realizar logout" });
+  }
+};

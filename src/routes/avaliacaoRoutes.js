@@ -2,12 +2,15 @@
 const express = require("express");
 const router = express.Router();
 const avaliacaoController = require("../controllers/avaliacaoController");
-const { checkAuth, checkRole } = require("../middlewares/authMiddleware");
+const { verifyToken } = require("../middlewares/authMiddleware");
 
-// Passageiro ou motorista pode criar avaliação
-router.post("/", checkAuth, checkRole("passageiro", "motorista"), avaliacaoController.create);
+// Criar avaliação (motorista ou passageiro)
+router.post("/", verifyToken, avaliacaoController.createAvaliacao);
 
-// Todos autenticados podem ver avaliações de uma corrida
-router.get("/corrida/:corrida_id", checkAuth, avaliacaoController.getByCorrida);
+// Listar avaliações recebidas por um usuário
+router.get("/user/:userId", verifyToken, avaliacaoController.getAvaliacoesByUser);
+
+// Média de avaliações de um usuário
+router.get("/user/:userId/media", verifyToken, avaliacaoController.getMediaAvaliacoes);
 
 module.exports = router;

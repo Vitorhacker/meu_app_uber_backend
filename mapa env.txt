@@ -1,0 +1,83 @@
+
+
+### 📋 Mapa de Variáveis do `.env`
+
+| Variável                                                  | Onde é usada                                    | Função                                             |
+| --------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------- |
+| **NODE_ENV**                                              | `server.js`, logs                               | Define ambiente (`production`, `development`)      |
+| **PORT**                                                  | `server.js`                                     | Porta que o Express escuta                         |
+| **DATABASE_URL**                                          | `db.js`                                         | Conexão única ao banco (Postgres via Railway)      |
+| **PGPOOL_MIN / PGPOOL_MAX / PGPOOL_IDLE_TIMEOUT**         | `db.js`                                         | Configura pool de conexões                         |
+| **JWT_SECRET**                                            | `authMiddleware.js`, `authController.js`        | Assinar/verificar tokens JWT                       |
+| **JWT_EXPIRES_IN**                                        | `authController.js`                             | Tempo de expiração dos tokens                      |
+| **PICPAY_CLIENT_ID / PICPAY_CLIENT_SECRET**               | `picpayService.js`                              | Autenticação na API PicPay                         |
+| **PICPAY_CALLBACK_URL**                                   | `paymentWebhookController.js`                   | URL que recebe notificações do PicPay              |
+| **PICPAY_RETURN_URL**                                     | `paymentController.js`                          | Redireciona usuário após pagamento                 |
+| **PICPAY_API_BASE**                                       | `picpayService.js`                              | Endpoint da API PicPay                             |
+| **ENABLE_PICPAY_POLLING**                                 | `picpayPollingJob.js`                           | Liga/desliga job de polling PicPay                 |
+| **PICPAY_POLL_BATCH**                                     | `picpayPollingJob.js`                           | Quantidade de pagamentos checados por rodada       |
+| **PICPAY_POLL_INTERVAL_MS**                               | `picpayPollingJob.js`                           | Intervalo de checagem (ms)                         |
+| **TEF_API_KEY**                                           | `paymentController.js` (futuro)                 | Integração com outro meio de pagamento             |
+| **PAYMENT_MODE**                                          | `paymentController.js`                          | Define se pagamentos são `test` ou `production`    |
+| **PLATFORM_USER_ID**                                      | `walletController.js`, `ledgerService.js`       | ID da carteira da plataforma                       |
+| **PLATFORM_FEE_PERCENT**                                  | `payoutService.js`, `ledgerService.js`          | Percentual da taxa da plataforma                   |
+| **MIN_PAYOUT_AMOUNT**                                     | `withdrawController.js`                         | Valor mínimo para solicitar saque                  |
+| **PAYOUT_SCHEDULE**                                       | `payoutJob.js`                                  | Agendamento de pagamentos automáticos              |
+| **SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS**         | `authController.js`                             | Envio de e-mails (recuperação senha, notificações) |
+| **FRONTEND_URL**                                          | `authController.js`, `paymentController.js`     | Links de retorno para o app/web                    |
+| **STORAGE_PROVIDER**                                      | `uploadService.js` (ou controllers de arquivos) | Define onde arquivos vão (local/S3)                |
+| **S3_BUCKET / S3_REGION / S3_ACCESS_KEY / S3_SECRET_KEY** | `uploadService.js`                              | Configuração AWS S3                                |
+| **LOG_LEVEL**                                             | `logger.js`                                     | Define nível de logs (debug, info, warn, error)    |
+| **ENABLE_REQUEST_LOGS**                                   | `server.js` (middleware)                        | Habilita/desabilita logs de requests               |
+| **REDIS_URL**                                             | `cacheService.js`, `sessionService.js`          | Usado para cache e filas                           |
+
+---
+
+
+                         ┌─────────────────────┐
+                         │        .env         │
+                         └─────────┬───────────┘
+                                   │ (dotenv)
+                                   ▼
+                         ┌─────────────────────┐
+                         │     config/db.js    │ ←── DATABASE_URL, PGPOOL_*
+                         └─────────┬───────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────────┐
+                         │     models/*        │  (schemas SQL)
+                         └─────────┬───────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────────┐
+                         │    services/*       │
+                         │  - picpayService    │ ←── PICPAY_*
+                         │  - payoutService    │ ←── PLATFORM_FEE, SCHEDULE
+                         │  - ledgerService    │
+                         │  - uploadService    │ ←── STORAGE_PROVIDER, S3_*
+                         │  - cacheService     │ ←── REDIS_URL
+                         └─────────┬───────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────────┐
+                         │  controllers/*      │
+                         │  - authController   │ ←── JWT_SECRET, SMTP_*
+                         │  - paymentController│ ←── PAYMENT_MODE
+                         │  - withdrawController│ ←── MIN_PAYOUT_AMOUNT
+                         │  - walletController │ ←── PLATFORM_USER_ID
+                         └─────────┬───────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────────┐
+                         │    routes/*         │
+                         │  - authRoutes       │
+                         │  - paymentRoutes    │
+                         │  - adminRoutes      │
+                         │  - withdrawRoutes   │
+                         └─────────┬───────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────────┐
+                         │     server.js       │ ←── PORT, NODE_ENV
+                         │   (inicializa app)  │
+                         └─────────────────────┘

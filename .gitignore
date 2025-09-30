@@ -8,6 +8,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.sqlite3
+Node_modules
 
 # Segredos do Google
 client_secret_*.json
@@ -16,6 +17,7 @@ client_secret_*.json
 venv/
 .venv/
 .env
+mapa env
 
 # Build / Dist
 dist/
