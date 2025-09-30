@@ -1,3 +1,4 @@
+// src/server.js
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -5,10 +6,17 @@ const dotenv = require("dotenv");
 const path = require("path");
 const fs = require("fs");
 const pool = require("./db");
+const http = require("http");
+const { Server } = require("socket.io");
 
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app); // servidor HTTP
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
 const PORT = process.env.PORT || 8081;
 
 app.use(cors());
@@ -26,10 +34,37 @@ pool.connect()
     process.exit(1);
   });
 
+// ==========================
+// 🔌 WebSocket - Localização
+// ==========================
+io.on("connection", (socket) => {
+  console.log("📡 Cliente conectado:", socket.id);
+
+  // motorista envia localização
+  socket.on("updateLocation", async (data) => {
+    const { user_id, latitude, longitude } = data;
+    try {
+      await pool.query(`
+        INSERT INTO user_locations (user_id, latitude, longitude, updated_at)
+        VALUES ($1,$2,$3,NOW())
+        ON CONFLICT (user_id)
+        DO UPDATE SET latitude=$2, longitude=$3, updated_at=NOW()
+      `, [user_id, latitude, longitude]);
+
+      // reenvia posição para passageiros
+      io.emit("locationUpdate", { user_id, latitude, longitude, updated_at: new Date() });
+    } catch (err) {
+      console.error("Erro ao salvar localização:", err.message);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("❌ Cliente desconectado:", socket.id);
+  });
+});
+
 /**
  * 🔄 Carrega automaticamente todas as rotas da pasta ./routes
- * Exemplo: authRoutes.js -> /api/auth
- *          rideRoutes.js -> /api/rides
  */
 const routesPath = path.join(__dirname, "routes");
 fs.readdirSync(routesPath).forEach((file) => {
@@ -37,7 +72,7 @@ fs.readdirSync(routesPath).forEach((file) => {
     const route = require(path.join(routesPath, file));
 
     // gera prefixo a partir do nome do arquivo
-    const name = file.replace("Routes.js", "").toLowerCase(); // ex: auth
+    const name = file.replace("Routes.js", "").toLowerCase();
     const basePath = `/api/${name}`;
 
     app.use(basePath, route);
@@ -73,6 +108,7 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: "Erro interno do servidor" });
 });
 
-app.listen(PORT, () => {
+// 🚀 agora usa server.listen em vez de app.listen
+server.listen(PORT, () => {
   console.log(`✅ Servidor rodando em http://localhost:${PORT}`);
 });

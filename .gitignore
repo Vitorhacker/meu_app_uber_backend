@@ -18,6 +18,7 @@ venv/
 .venv/
 .env
 mapa env
+Mapa do backend
 
 # Build / Dist
 dist/
