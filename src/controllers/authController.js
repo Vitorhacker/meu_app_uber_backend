@@ -30,7 +30,7 @@ exports.registerPassenger = async (req, res) => {
     const hashedPassword = await bcrypt.hash(senha, 10);
 
     const result = await pool.query(
-      `INSERT INTO usuario (nome, cpf, telefone, email, senha, role, created_at)
+      `INSERT INTO usuarios (nome, cpf, telefone, email, senha, role, created_at)
        VALUES ($1, $2, $3, $4, $5, 'passageiro', NOW())
        RETURNING id, nome, cpf, telefone, email, role, created_at`,
       [nome, cpf, telefone, email, hashedPassword]
@@ -54,7 +54,7 @@ exports.loginPassenger = async (req, res) => {
 
   try {
     const result = await pool.query(
-      "SELECT * FROM usuario WHERE email = $1 AND role = 'passageiro'",
+      "SELECT * FROM usuarios WHERE email = $1 AND role = 'passageiro'",
       [email]
     );
 
@@ -102,7 +102,7 @@ exports.registerDriver = async (req, res) => {
     const hashedPassword = await bcrypt.hash(senha, 10);
 
     const result = await pool.query(
-      `INSERT INTO usuario (nome, email, senha, role, created_at)
+      `INSERT INTO usuarios (nome, email, senha, role, created_at)
        VALUES ($1, $2, $3, 'motorista', NOW())
        RETURNING id, nome, email, role, created_at`,
       [nome, email, hashedPassword]
@@ -126,7 +126,7 @@ exports.loginDriver = async (req, res) => {
 
   try {
     const result = await pool.query(
-      "SELECT * FROM usuario WHERE email = $1 AND role = 'motorista'",
+      "SELECT * FROM usuarios WHERE email = $1 AND role = 'motorista'",
       [email]
     );
 
@@ -166,7 +166,7 @@ exports.getProfile = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      "SELECT id, nome, cpf, telefone, email, role, created_at FROM usuario WHERE id = $1",
+      "SELECT id, nome, cpf, telefone, email, role, created_at FROM usuarios WHERE id = $1",
       [userId]
     );
 
@@ -189,7 +189,7 @@ exports.refreshToken = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      "SELECT id, nome, cpf, telefone, email, role FROM usuario WHERE id = $1",
+      "SELECT id, nome, cpf, telefone, email, role FROM usuarios WHERE id = $1",
       [userId]
     );
 
