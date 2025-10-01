@@ -20,16 +20,20 @@ function generateToken(user) {
 // PASSAGEIRO - Registro
 // ========================================
 exports.registerPassenger = async (req, res) => {
-  const { nome, email, senha } = req.body;
+  const { nome, cpf, telefone, email, senha } = req.body;
+
+  if (!nome || !cpf || !telefone || !email || !senha) {
+    return res.status(400).json({ error: "Todos os campos são obrigatórios" });
+  }
 
   try {
     const hashedPassword = await bcrypt.hash(senha, 10);
 
     const result = await pool.query(
-      `INSERT INTO usuario (nome, email, senha, role, created_at)
-       VALUES ($1, $2, $3, 'passageiro', NOW())
-       RETURNING id, nome, email, role, created_at`,
-      [nome, email, hashedPassword]
+      `INSERT INTO usuario (nome, cpf, telefone, email, senha, role, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'passageiro', NOW())
+       RETURNING id, nome, cpf, telefone, email, role, created_at`,
+      [nome, cpf, telefone, email, hashedPassword]
     );
 
     const user = result.rows[0];
@@ -37,7 +41,7 @@ exports.registerPassenger = async (req, res) => {
 
     return res.status(201).json({ user, token });
   } catch (err) {
-    console.error("Erro ao registrar passageiro:", err);
+    console.error("Erro ao registrar passageiro:", err.message);
     return res.status(500).json({ error: "Erro ao registrar passageiro" });
   }
 };
@@ -68,11 +72,18 @@ exports.loginPassenger = async (req, res) => {
     const token = generateToken(user);
 
     return res.json({
-      user: { id: user.id, nome: user.nome, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        nome: user.nome,
+        cpf: user.cpf,
+        telefone: user.telefone,
+        email: user.email,
+        role: user.role
+      },
       token,
     });
   } catch (err) {
-    console.error("Erro no login do passageiro:", err);
+    console.error("Erro no login do passageiro:", err.message);
     return res.status(500).json({ error: "Erro ao fazer login" });
   }
 };
@@ -82,6 +93,10 @@ exports.loginPassenger = async (req, res) => {
 // ========================================
 exports.registerDriver = async (req, res) => {
   const { nome, email, senha } = req.body;
+
+  if (!nome || !email || !senha) {
+    return res.status(400).json({ error: "Todos os campos são obrigatórios" });
+  }
 
   try {
     const hashedPassword = await bcrypt.hash(senha, 10);
@@ -98,7 +113,7 @@ exports.registerDriver = async (req, res) => {
 
     return res.status(201).json({ user, token });
   } catch (err) {
-    console.error("Erro ao registrar motorista:", err);
+    console.error("Erro ao registrar motorista:", err.message);
     return res.status(500).json({ error: "Erro ao registrar motorista" });
   }
 };
@@ -129,11 +144,16 @@ exports.loginDriver = async (req, res) => {
     const token = generateToken(user);
 
     return res.json({
-      user: { id: user.id, nome: user.nome, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        nome: user.nome,
+        email: user.email,
+        role: user.role
+      },
       token,
     });
   } catch (err) {
-    console.error("Erro no login do motorista:", err);
+    console.error("Erro no login do motorista:", err.message);
     return res.status(500).json({ error: "Erro ao fazer login" });
   }
 };
@@ -146,7 +166,7 @@ exports.getProfile = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      "SELECT id, nome, email, role, created_at FROM usuario WHERE id = $1",
+      "SELECT id, nome, cpf, telefone, email, role, created_at FROM usuario WHERE id = $1",
       [userId]
     );
 
@@ -156,7 +176,7 @@ exports.getProfile = async (req, res) => {
 
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao buscar perfil:", err);
+    console.error("Erro ao buscar perfil:", err.message);
     return res.status(500).json({ error: "Erro interno no servidor" });
   }
 };
@@ -169,7 +189,7 @@ exports.refreshToken = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      "SELECT id, nome, email, role FROM usuario WHERE id = $1",
+      "SELECT id, nome, cpf, telefone, email, role FROM usuario WHERE id = $1",
       [userId]
     );
 
@@ -182,7 +202,7 @@ exports.refreshToken = async (req, res) => {
 
     return res.json({ token: newToken });
   } catch (err) {
-    console.error("Erro ao renovar token:", err);
+    console.error("Erro ao renovar token:", err.message);
     return res.status(500).json({ error: "Erro ao renovar token" });
   }
 };
@@ -205,7 +225,7 @@ exports.logout = async (req, res) => {
 
     return res.json({ message: "Logout realizado com sucesso" });
   } catch (err) {
-    console.error("Erro no logout:", err);
+    console.error("Erro no logout:", err.message);
     return res.status(500).json({ error: "Erro ao realizar logout" });
   }
 };
