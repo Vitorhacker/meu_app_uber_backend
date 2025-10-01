@@ -22,7 +22,17 @@ router.put("/:id/assign", ctrl.assignDriver);
 // Iniciar corrida (motorista iniciou)
 router.put("/:id/start", ctrl.start);
 
-// Finalizar corrida
+// Finalizar corrida (motorista recebe líquido + notificação + cria registro em pagamentos)
 router.put("/:id/finish", ctrl.finish);
+
+// ======================
+// ROTAS PUSH TOKEN / NOTIFICAÇÃO
+// ======================
+
+// Salvar push token do motorista
+router.put("/motorista/:id/token", ctrl.savePushToken);
+
+// Testar envio de notificação manual
+router.post("/motorista/notify", ctrl.notifyMotorista);
 
 module.exports = router;
