@@ -1,17 +1,30 @@
-// src/controllers/corridaController.js
 const pool = require("../db");
 
 // ======================
 // CRIAR CORRIDA (passageiro solicita)
 // ======================
 exports.create = async (req, res) => {
-  const { passageiro_id, origem, destino, origemCoords, destinoCoords, valor_estimado, category } = req.body;
+  const { passageiro_id, origem, destino, origemCoords, destinoCoords, valor_estimado, category, stops } = req.body;
 
   try {
+    // Distância e duração placeholders (substituir por API real se quiser)
+    let distancia_total = 0; // km
+    let duracao_total = 0;   // minutos
+
+    if (stops && stops.length > 0) {
+      stops.forEach(stop => {
+        distancia_total += 2; // exemplo: 2km por parada
+        duracao_total += 5;   // exemplo: 5min por parada
+      });
+    }
+    // acrescenta distância entre origem e destino (exemplo fixo)
+    distancia_total += 10;
+    duracao_total += 20;
+
     const result = await pool.query(
       `INSERT INTO corridas 
-       (passageiro_id, origem, destino, origem_lat, origem_lng, destino_lat, destino_lng, valor_estimado, category, status, criado_em)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'procurando_motorista',NOW())
+       (passageiro_id, origem, destino, origem_lat, origem_lng, destino_lat, destino_lng, valor_estimado, category, status, criado_em, paradas, distancia, duracao)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'procurando_motorista',NOW(), $10, $11, $12)
        RETURNING *`,
       [
         passageiro_id,
@@ -22,7 +35,10 @@ exports.create = async (req, res) => {
         destinoCoords.latitude,
         destinoCoords.longitude,
         valor_estimado,
-        category || "Flash Plus"
+        category || "Flash Plus",
+        JSON.stringify(stops || []),
+        distancia_total,
+        duracao_total
       ]
     );
 
@@ -54,14 +70,12 @@ exports.accept = async (req, res) => {
 
     const corrida = result.rows[0];
 
-    // Buscar dados reais do motorista
     const motoristaRes = await pool.query(
       `SELECT id, nome, modelo, placa, categoria FROM motoristas WHERE id = $1`,
       [motorista_id]
     );
     corrida.motorista = motoristaRes.rows[0] || null;
 
-    // Mostrar valor líquido estimado ao motorista (80%)
     corrida.valor_motorista_estimado = corrida.valor_estimado * 0.8;
 
     return res.json(corrida);
@@ -99,15 +113,14 @@ exports.finish = async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const { valor_final } = req.body;
+    const { valor_final, distancia, duracao } = req.body;
     const corrida_id = req.params.id;
 
-    // Atualiza corrida para finalizada
     const corridaResult = await client.query(
       `UPDATE corridas 
-       SET status = 'finalizada', fim_em = NOW(), valor_final = $1 
-       WHERE id = $2 RETURNING *`,
-      [valor_final, corrida_id]
+       SET status = 'finalizada', fim_em = NOW(), valor_final = $1, distancia = $2, duracao = $3
+       WHERE id = $4 RETURNING *`,
+      [valor_final, distancia || 0, duracao || 0, corrida_id]
     );
 
     if (corridaResult.rows.length === 0) {
@@ -118,11 +131,9 @@ exports.finish = async (req, res) => {
     const corrida = corridaResult.rows[0];
     const { motorista_id, passageiro_id, forma_pagamento } = corrida;
 
-    // Calcular valores
     const valor_motorista = valor_final * 0.8;
     const valor_plataforma = valor_final * 0.2;
 
-    // Inserir pagamento
     await client.query(
       `INSERT INTO pagamentos 
        (corrida_id, passageiro_id, motorista_id, valor_total, valor_motorista, valor_plataforma, forma_pagamento, data_pagamento)
@@ -130,7 +141,6 @@ exports.finish = async (req, res) => {
       [corrida_id, passageiro_id, motorista_id, valor_final, valor_motorista, valor_plataforma, forma_pagamento]
     );
 
-    // Atualizar wallet do motorista
     await client.query(
       `UPDATE wallets SET saldo = saldo + $1 WHERE user_id = $2`,
       [valor_motorista, motorista_id]
