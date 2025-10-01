@@ -19,20 +19,35 @@ router.get("/:id", ctrl.get);
 // Atribuir motorista à corrida
 router.put("/:id/assign", ctrl.assignDriver);
 
-// Iniciar corrida (motorista iniciou)
+// Iniciar corrida
 router.put("/:id/start", ctrl.start);
 
-// Finalizar corrida (motorista recebe líquido + notificação + cria registro em pagamentos)
+// Finalizar corrida
 router.put("/:id/finish", ctrl.finish);
 
-// ======================
-// ROTAS PUSH TOKEN / NOTIFICAÇÃO
-// ======================
+// Cancelar corrida
+router.put("/:id/cancel", ctrl.cancel);
 
-// Salvar push token do motorista
+// Atualizar localização do motorista (via REST)
+router.put("/:id/location", ctrl.updateLocation);
+
+// ======================
+// FILTROS E HISTÓRICO
+// ======================
+router.get("/passageiro/:id", ctrl.listByPassenger);
+router.get("/motorista/:id", ctrl.listByDriver);
+router.get("/historico/passageiro/:id", ctrl.historyPassenger);
+router.get("/historico/motorista/:id", ctrl.historyDriver);
+
+// ======================
+// PAGAMENTOS
+// ======================
+router.post("/webhook/pagamento", ctrl.paymentWebhook);
+
+// ======================
+// PUSH TOKEN / NOTIFICAÇÃO
+// ======================
 router.put("/motorista/:id/token", ctrl.savePushToken);
-
-// Testar envio de notificação manual
 router.post("/motorista/notify", ctrl.notifyMotorista);
 
 module.exports = router;

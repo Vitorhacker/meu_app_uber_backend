@@ -1,215 +1,141 @@
+// src/controllers/corridaController.js
 const pool = require("../db");
-const { sendNotificationMotorista } = require("../services/notificationService");
 
+// ========================
 // Criar corrida
+// ========================
 exports.create = async (req, res) => {
-  const { passageiro_id, origem, destino, valor_estimado } = req.body;
-
   try {
-    const q = `
-      INSERT INTO corridas (passageiro_id, origem, destino, valor_estimado, status, created_at)
-      VALUES ($1, $2, $3, $4, 'pendente', NOW())
+    const {
+      passageiro_id,
+      origem,
+      destino,
+      distancia,
+      duracao,
+      valor_estimado,
+      categoria,
+      horario
+    } = req.body;
+
+    if (!passageiro_id || !origem || !destino || !valor_estimado) {
+      return res.status(400).json({ error: "Campos obrigatórios ausentes" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO corridas 
+      (passageiro_id, origem, destino, distancia, duracao, valor_estimado, categoria, horario, status, criado_em)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pendente',NOW())
       RETURNING *;
-    `;
-    const r = await pool.query(q, [passageiro_id, origem, destino, valor_estimado]);
-    res.json(r.rows[0]);
+      `,
+      [
+        passageiro_id,
+        origem,
+        destino,
+        distancia || null,
+        duracao || null,
+        valor_estimado,
+        categoria || "comum",
+        horario || new Date()
+      ]
+    );
+
+    return res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro create corrida:", err);
-    res.status(500).json({ error: "Erro ao criar corrida" });
+    console.error("❌ Erro ao criar corrida:", err.message);
+    return res.status(500).json({ error: "Erro ao criar corrida" });
   }
 };
 
-// Listar corridas
-exports.list = async (_req, res) => {
+// ========================
+// Listar todas corridas
+// ========================
+exports.listAll = async (req, res) => {
   try {
-    const q = "SELECT * FROM corridas ORDER BY created_at DESC";
-    const r = await pool.query(q);
-    res.json(r.rows);
+    const result = await pool.query(
+      "SELECT * FROM corridas ORDER BY criado_em DESC"
+    );
+    return res.json(result.rows);
   } catch (err) {
-    console.error("❌ Erro list corridas:", err);
-    res.status(500).json({ error: "Erro ao listar corridas" });
+    console.error("❌ Erro ao listar corridas:", err.message);
+    return res.status(500).json({ error: "Erro ao listar corridas" });
   }
 };
 
+// ========================
 // Buscar corrida por ID
-exports.get = async (req, res) => {
-  const { id } = req.params;
+// ========================
+exports.getById = async (req, res) => {
   try {
-    const q = "SELECT * FROM corridas WHERE id = $1";
-    const r = await pool.query(q, [id]);
+    const { id } = req.params;
+    const result = await pool.query("SELECT * FROM corridas WHERE id=$1", [id]);
 
-    if (r.rows.length === 0) return res.status(404).json({ error: "Corrida não encontrada" });
-
-    res.json(r.rows[0]);
-  } catch (err) {
-    console.error("❌ Erro get corrida:", err);
-    res.status(500).json({ error: "Erro ao buscar corrida" });
-  }
-};
-
-// Atribuir motorista
-exports.assignDriver = async (req, res) => {
-  const { id } = req.params;
-  const { motorista_id } = req.body;
-
-  try {
-    const q = `
-      UPDATE corridas
-      SET motorista_id = $1, status = 'aceita'
-      WHERE id = $2
-      RETURNING *;
-    `;
-    const r = await pool.query(q, [motorista_id, id]);
-
-    if (r.rows.length === 0) return res.status(404).json({ error: "Corrida não encontrada" });
-
-    res.json(r.rows[0]);
-  } catch (err) {
-    console.error("❌ Erro assignDriver:", err);
-    res.status(500).json({ error: "Erro ao atribuir motorista" });
-  }
-};
-
-// Iniciar corrida
-exports.start = async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const q = `
-      UPDATE corridas
-      SET status = 'em_andamento', inicio_corrida = NOW()
-      WHERE id = $1
-      RETURNING *;
-    `;
-    const r = await pool.query(q, [id]);
-
-    if (r.rows.length === 0) return res.status(404).json({ error: "Corrida não encontrada" });
-
-    res.json(r.rows[0]);
-  } catch (err) {
-    console.error("❌ Erro start corrida:", err);
-    res.status(500).json({ error: "Erro ao iniciar corrida" });
-  }
-};
-
-// Finalizar corrida (atualiza corrida, cria pagamento, soma carteira, notifica motorista)
-exports.finish = async (req, res) => {
-  const { id } = req.params;
-  const { valor_final, metodo = "carteira" } = req.body;
-
-  try {
-    await pool.query("BEGIN");
-
-    // Atualizar corrida
-    const corridaQ = `
-      UPDATE corridas
-      SET status = 'finalizada', fim_corrida = NOW(), valor_final = $1
-      WHERE id = $2
-      RETURNING *;
-    `;
-    const corridaR = await pool.query(corridaQ, [valor_final, id]);
-    if (corridaR.rows.length === 0) {
-      await pool.query("ROLLBACK");
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Corrida não encontrada" });
     }
-    const corrida = corridaR.rows[0];
 
-    // Calcular valores
-    const valorPlataforma = parseFloat(valor_final) * 0.2;
-    const valorMotorista = parseFloat(valor_final) - valorPlataforma;
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("❌ Erro ao buscar corrida:", err.message);
+    return res.status(500).json({ error: "Erro ao buscar corrida" });
+  }
+};
 
-    // Criar pagamento
-    const pagamentoQ = `
-      INSERT INTO pagamentos (
-        corrida_id, passageiro_id, motorista_id,
-        valor_total, valor_motorista, valor_plataforma,
-        metodo, status, transacao_id, data_pagamento, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'pendente',$8,NOW(),NOW())
-      RETURNING *;
-    `;
-    const pagamentoR = await pool.query(pagamentoQ, [
-      corrida.id,
-      corrida.passageiro_id,
-      corrida.motorista_id,
+// ========================
+// Atualizar corrida
+// ========================
+exports.update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      motorista_id,
+      status,
       valor_final,
-      valorMotorista,
-      valorPlataforma,
-      metodo,
-      `TRANS-${Date.now()}`
-    ]);
-    const pagamento = pagamentoR.rows[0];
+      categoria,
+      horario
+    } = req.body;
 
-    // Atualizar carteira do motorista
-    const carteiraQ = `
-      UPDATE motoristas
-      SET saldo_carteira = saldo_carteira + $1
-      WHERE id = $2
-      RETURNING id, nome, saldo_carteira, push_token;
-    `;
-    const motoristaR = await pool.query(carteiraQ, [valorMotorista, corrida.motorista_id]);
-    const motorista = motoristaR.rows[0];
+    const result = await pool.query(
+      `
+      UPDATE corridas
+      SET motorista_id = COALESCE($1, motorista_id),
+          status = COALESCE($2, status),
+          valor_final = COALESCE($3, valor_final),
+          categoria = COALESCE($4, categoria),
+          horario = COALESCE($5, horario),
+          atualizado_em = NOW()
+      WHERE id=$6
+      RETURNING *;
+      `,
+      [motorista_id || null, status || null, valor_final || null, categoria || null, horario || null, id]
+    );
 
-    await pool.query("COMMIT");
-
-    // Notificação para motorista
-    if (motorista && motorista.push_token) {
-      await sendNotificationMotorista(
-        motorista.push_token,
-        "Corrida finalizada ✅",
-        `Você recebeu R$ ${valorMotorista.toFixed(2)} na sua carteira.`
-      );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Corrida não encontrada" });
     }
 
-    res.json({ corrida, pagamento, motorista });
+    return res.json(result.rows[0]);
   } catch (err) {
-    await pool.query("ROLLBACK");
-    console.error("❌ Erro finish corrida:", err);
-    res.status(500).json({ error: "Erro ao finalizar corrida" });
+    console.error("❌ Erro ao atualizar corrida:", err.message);
+    return res.status(500).json({ error: "Erro ao atualizar corrida" });
   }
 };
 
-// Salvar push token do motorista
-exports.savePushToken = async (req, res) => {
-  const { id } = req.params; // motorista_id
-  const { pushToken } = req.body;
-
-  if (!pushToken) {
-    return res.status(400).json({ error: "pushToken é obrigatório." });
-  }
-
+// ========================
+// Remover corrida
+// ========================
+exports.remove = async (req, res) => {
   try {
-    const q = `
-      UPDATE motoristas
-      SET push_token = $1, updated_at = NOW()
-      WHERE id = $2
-      RETURNING id, nome, push_token;
-    `;
-    const r = await pool.query(q, [pushToken, id]);
+    const { id } = req.params;
+    const result = await pool.query("DELETE FROM corridas WHERE id=$1 RETURNING *", [id]);
 
-    if (r.rows.length === 0) {
-      return res.status(404).json({ error: "Motorista não encontrado." });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Corrida não encontrada" });
     }
 
-    res.json({ success: true, motorista: r.rows[0] });
+    return res.json({ message: "Corrida removida com sucesso" });
   } catch (err) {
-    console.error("❌ Erro savePushToken:", err);
-    res.status(500).json({ error: "Erro ao salvar push token" });
-  }
-};
-
-// Enviar notificação manual (teste)
-exports.notifyMotorista = async (req, res) => {
-  const { pushToken, title, body } = req.body;
-
-  if (!pushToken || !title || !body) {
-    return res.status(400).json({ error: "pushToken, title e body são obrigatórios" });
-  }
-
-  try {
-    await sendNotificationMotorista(pushToken, title, body);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("❌ Erro notifyMotorista:", err);
-    res.status(500).json({ error: "Erro ao enviar notificação" });
+    console.error("❌ Erro ao remover corrida:", err.message);
+    return res.status(500).json({ error: "Erro ao remover corrida" });
   }
 };
