@@ -80,6 +80,10 @@ fs.readdirSync(routesPath).forEach((file) => {
   }
 });
 
+// 🔄 Alias para aceitar também plural (/api/corridas)
+const corridaRoutes = require("./routes/corridaRoutes");
+app.use("/api/corridas", corridaRoutes);
+
 // Rota de retorno PicPay
 app.get("/app/checkout-return", (req, res) => {
   res.send(`
