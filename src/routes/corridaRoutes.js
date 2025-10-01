@@ -1,53 +1,28 @@
 // src/routes/corridaRoutes.js
 const express = require("express");
 const router = express.Router();
-const ctrl = require("../controllers/corridaController");
+const corridaController = require("../controllers/corridaController");
+const { verifyToken } = require("../middlewares/authMiddleware");
 
-// ======================
-// ROTAS DE CORRIDAS
-// ======================
+// Criar corrida
+router.post("/", verifyToken, corridaController.create);
 
-// Criar corrida (passageiro solicita)
-router.post("/", ctrl.create);
-
-// Listar todas corridas
-router.get("/", ctrl.list);
-
-// Buscar corrida por ID
-router.get("/:id", ctrl.get);
-
-// Atribuir motorista à corrida
-router.put("/:id/assign", ctrl.assignDriver);
+// Motorista aceita corrida
+router.put("/:id/accept", verifyToken, corridaController.accept);
 
 // Iniciar corrida
-router.put("/:id/start", ctrl.start);
+router.put("/:id/start", verifyToken, corridaController.start);
 
 // Finalizar corrida
-router.put("/:id/finish", ctrl.finish);
+router.put("/:id/finish", verifyToken, corridaController.finish);
 
 // Cancelar corrida
-router.put("/:id/cancel", ctrl.cancel);
+router.put("/:id/cancel", verifyToken, corridaController.cancel);
 
-// Atualizar localização do motorista (via REST)
-router.put("/:id/location", ctrl.updateLocation);
+// Listar corridas de um passageiro
+router.get("/passageiro/:passageiro_id", verifyToken, corridaController.getByPassenger);
 
-// ======================
-// FILTROS E HISTÓRICO
-// ======================
-router.get("/passageiro/:id", ctrl.listByPassenger);
-router.get("/motorista/:id", ctrl.listByDriver);
-router.get("/historico/passageiro/:id", ctrl.historyPassenger);
-router.get("/historico/motorista/:id", ctrl.historyDriver);
-
-// ======================
-// PAGAMENTOS
-// ======================
-router.post("/webhook/pagamento", ctrl.paymentWebhook);
-
-// ======================
-// PUSH TOKEN / NOTIFICAÇÃO
-// ======================
-router.put("/motorista/:id/token", ctrl.savePushToken);
-router.post("/motorista/notify", ctrl.notifyMotorista);
+// Listar corridas de um motorista
+router.get("/motorista/:motorista_id", verifyToken, corridaController.getByDriver);
 
 module.exports = router;

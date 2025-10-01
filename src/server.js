@@ -35,26 +35,26 @@ pool.connect()
   });
 
 // ==========================
-// 🔌 WebSocket - Localização
+// 🔌 WebSocket - Localização Motorista
 // ==========================
 io.on("connection", (socket) => {
   console.log("📡 Cliente conectado:", socket.id);
 
   // motorista envia localização
   socket.on("updateLocation", async (data) => {
-    const { user_id, latitude, longitude } = data;
+    const { motorista_id, latitude, longitude } = data;
     try {
       await pool.query(`
-        INSERT INTO user_locations (user_id, latitude, longitude, updated_at)
+        INSERT INTO driver_locations (driver_id, latitude, longitude, ultima_atualizacao)
         VALUES ($1,$2,$3,NOW())
-        ON CONFLICT (user_id)
-        DO UPDATE SET latitude=$2, longitude=$3, updated_at=NOW()
-      `, [user_id, latitude, longitude]);
+        ON CONFLICT (driver_id)
+        DO UPDATE SET latitude=$2, longitude=$3, ultima_atualizacao=NOW()
+      `, [motorista_id, latitude, longitude]);
 
       // reenvia posição para passageiros
-      io.emit("locationUpdate", { user_id, latitude, longitude, updated_at: new Date() });
+      io.emit("locationUpdate", { motorista_id, latitude, longitude, ultima_atualizacao: new Date() });
     } catch (err) {
-      console.error("Erro ao salvar localização:", err.message);
+      console.error("❌ Erro ao salvar localização motorista:", err.message);
     }
   });
 
@@ -80,9 +80,10 @@ fs.readdirSync(routesPath).forEach((file) => {
   }
 });
 
-// 🔄 Alias para aceitar também plural (/api/corridas)
+// 🔄 Alias explícito para /api/corridas e /api/corrida
 const corridaRoutes = require("./routes/corridaRoutes");
 app.use("/api/corridas", corridaRoutes);
+app.use("/api/corrida", corridaRoutes); // opcional (singular)
 
 // Rota de retorno PicPay
 app.get("/app/checkout-return", (req, res) => {
