@@ -1,60 +1,63 @@
 const pool = require("../db");
-
-// ======================
-// TARIFAS POR CATEGORIA
-// ======================
-const tarifas = {
-  "Flash Hatch": { base: 6, preco_km: 1.5, preco_min: 0.4 },
-  "Flash Plus": { base: 9, preco_km: 2, preco_min: 0.5 },
-  "Flash Premium": { base: 15, preco_km: 3, preco_min: 0.7 },
-};
-
-// ======================
-// HORÁRIO DE PICO
-// ======================
-const multiplicadorPico = 1.25;
-const isHorarioPico = () => {
-  const now = new Date();
-  const hour = now.getHours();
-  return (hour >= 7 && hour <= 10) || (hour >= 17 && hour <= 20);
-};
-
-// ======================
-// FUNÇÃO PARA CALCULAR VALOR
-// ======================
-const calcularValor = (category, distancia_km, duracao_min) => {
-  const tarifa = tarifas[category] || tarifas["Flash Plus"];
-  let valor = tarifa.base + distancia_km * tarifa.preco_km + duracao_min * tarifa.preco_min;
-  if (isHorarioPico()) valor *= multiplicadorPico;
-  return parseFloat(valor.toFixed(2));
-};
+const { calcularValor, calcularDivisao } = require("../utils/tarifas");
 
 // ======================
 // CRIAR CORRIDA
 // ======================
 exports.create = async (req, res) => {
-  const { passageiro_id, origem, destino, origemCoords, destinoCoords, category, stops, passageiroLocation } = req.body;
+  const {
+    passageiro_id,
+    origem,
+    destino,
+    origemCoords,
+    destinoCoords,
+    category,
+    stops,
+    passageiroLocation,
+    forma_pagamento,
+    valor_estimado,
+  } = req.body;
 
   try {
-    let distancia_total = 0;
-    let duracao_total = 0;
+    // ======================
+    // Validar pagamento
+    // ======================
+    const pagamentoRes = await pool.query(
+      "SELECT * FROM pagamentos WHERE corrida_id IS NULL AND passageiro_id = $1 ORDER BY criado_em DESC LIMIT 1",
+      [passageiro_id]
+    );
+
+    const pagamento = pagamentoRes.rows[0];
+    if (!pagamento || (pagamento.status !== "pago" && pagamento.status !== "processando")) {
+      return res.status(400).json({ error: "Pagamento não confirmado ou inválido." });
+    }
+
+    let distancia_total = 10; // default
+    let duracao_total = 20;
 
     if (stops && stops.length > 0) {
-      stops.forEach(stop => {
+      stops.forEach(() => {
         distancia_total += 2;
         duracao_total += 5;
       });
     }
 
-    distancia_total += 10;
-    duracao_total += 20;
-
-    const valor_estimado = calcularValor(category, distancia_total, duracao_total);
+    // ======================
+    // Valor estimado com tarifa atualizada
+    // ======================
+    const now = new Date();
+    const valor_final = valor_estimado || calcularValor(
+      category,
+      distancia_total,
+      duracao_total,
+      stops?.length || 0,
+      now
+    );
 
     const result = await pool.query(
       `INSERT INTO corridas 
-       (passageiro_id, origem, destino, origem_lat, origem_lng, destino_lat, destino_lng, valor_estimado, category, status, criado_em, paradas, distancia, duracao, passageiro_lat, passageiro_lng)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'procurando_motorista',NOW(), $10, $11, $12, $13, $14)
+       (passageiro_id, origem, destino, origem_lat, origem_lng, destino_lat, destino_lng, valor_estimado, category, status, criado_em, paradas, distancia, duracao, passageiro_lat, passageiro_lng, forma_pagamento)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'procurando_motorista',NOW(),$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         passageiro_id,
@@ -64,19 +67,23 @@ exports.create = async (req, res) => {
         origemCoords.longitude,
         destinoCoords.latitude,
         destinoCoords.longitude,
-        valor_estimado,
-        category || "Flash Plus",
+        valor_final,
+        category || "FlashPlus",
         JSON.stringify(stops || []),
         distancia_total,
         duracao_total,
         passageiroLocation?.latitude || origemCoords.latitude,
-        passageiroLocation?.longitude || origemCoords.longitude
+        passageiroLocation?.longitude || origemCoords.longitude,
+        forma_pagamento || "wallet",
       ]
     );
 
     const corrida = result.rows[0];
-    corrida.motorista = null;
 
+    // Atualizar pagamento vinculado
+    await pool.query("UPDATE pagamentos SET corrida_id = $1 WHERE id = $2", [corrida.id, pagamento.id]);
+
+    corrida.motorista = null;
     return res.status(201).json(corrida);
   } catch (err) {
     console.error("Erro ao criar corrida:", err);
@@ -155,9 +162,18 @@ exports.finish = async (req, res) => {
     }
 
     const corrida = corridaRes.rows[0];
-    const valor_final = calcularValor(corrida.category, distancia || corrida.distancia, duracao || corrida.duracao);
-    const valor_motorista = parseFloat((valor_final * 0.8).toFixed(2));
-    const valor_plataforma = parseFloat((valor_final * 0.2).toFixed(2));
+    const stops = corrida.paradas ? JSON.parse(corrida.paradas).length : 0;
+    const now = new Date();
+
+    const valor_final = calcularValor(
+      corrida.category,
+      distancia || corrida.distancia,
+      duracao || corrida.duracao,
+      stops,
+      now
+    );
+
+    const { valorMotorista: valor_motorista, valorPlataforma: valor_plataforma } = calcularDivisao(valor_final);
 
     await client.query(
       `UPDATE corridas 
@@ -185,7 +201,7 @@ exports.finish = async (req, res) => {
       corrida: { ...corrida, valor_final },
       valor_motorista,
       valor_plataforma,
-      transaction_id
+      transaction_id,
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -268,5 +284,58 @@ exports.updateLocation = async (req, res) => {
   } catch (err) {
     console.error("Erro ao atualizar localização:", err);
     return res.status(500).json({ error: "Erro ao atualizar localização" });
+  }
+};
+
+// ======================
+// ATUALIZAR FORMA DE PAGAMENTO
+// ======================
+exports.updatePayment = async (req, res) => {
+  try {
+    const corridaId = req.params.id;
+    const { novaFormaPagamento, passageiro_id } = req.body;
+
+    if (!novaFormaPagamento) {
+      return res.status(400).json({ error: "Nova forma de pagamento não fornecida." });
+    }
+
+    const corridaRes = await pool.query(`SELECT * FROM corridas WHERE id = $1`, [corridaId]);
+    if (corridaRes.rows.length === 0) {
+      return res.status(404).json({ error: "Corrida não encontrada." });
+    }
+
+    const corrida = corridaRes.rows[0];
+
+    if (corrida.status !== "procurando_motorista") {
+      return res.status(400).json({ error: "Não é possível alterar o pagamento após iniciar a corrida." });
+    }
+
+    if (corrida.passageiro_id !== passageiro_id) {
+      return res.status(403).json({ error: "Você não pode alterar o pagamento desta corrida." });
+    }
+
+    // Debitar saldo se for wallet
+    if (novaFormaPagamento === "wallet") {
+      const saldoRes = await pool.query("SELECT saldo FROM wallets WHERE user_id = $1", [passageiro_id]);
+      const saldo = saldoRes.rows[0]?.saldo || 0;
+
+      if (saldo < corrida.valor_estimado) {
+        return res.status(400).json({ error: "Saldo insuficiente na wallet." });
+      }
+
+      await pool.query("UPDATE wallets SET saldo = saldo - $1 WHERE user_id = $2", [corrida.valor_estimado, passageiro_id]);
+
+      if (corrida.motorista_id) {
+        const valorMotorista = parseFloat((corrida.valor_estimado * 0.8).toFixed(2));
+        await pool.query("UPDATE wallets SET saldo = saldo + $1 WHERE user_id = $2", [valorMotorista, corrida.motorista_id]);
+      }
+    }
+
+    await pool.query(`UPDATE corridas SET forma_pagamento = $1 WHERE id = $2 RETURNING *`, [novaFormaPagamento, corridaId]);
+
+    return res.json({ message: "Forma de pagamento atualizada com sucesso.", novaFormaPagamento });
+  } catch (err) {
+    console.error("Erro ao atualizar forma de pagamento:", err);
+    return res.status(500).json({ error: "Erro interno ao atualizar forma de pagamento." });
   }
 };

@@ -1,23 +1,22 @@
-// src/routes/pagamentoRoutes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 
-const pagamentoController = require('../controllers/pagamentoController');
-const { verifyToken, requireRole } = require('../middlewares/authMiddleware');
+const pagamentoController = require("../controllers/pagamentoController");
+const { verifyToken, requireRole } = require("../middlewares/authMiddleware");
 
-// Criar pagamento (Pix ou cartão)
-router.post('/create/:rideId', verifyToken, pagamentoController.criarPagamento);
+// Criar pagamento (Pix, cartão, wallet)
+router.post("/create", verifyToken, pagamentoController.criarPagamento);
 
 // Consultar status do pagamento
-router.get('/status/:rideId', verifyToken, pagamentoController.consultarStatus);
+router.get("/status/:id", verifyToken, pagamentoController.consultarStatus);
 
 // Confirmar pagamento manualmente (admin)
-router.post('/confirm/:rideId', verifyToken, requireRole('admin'), pagamentoController.confirmarPagamento);
+router.post("/confirm/:id", verifyToken, requireRole("admin"), pagamentoController.confirmarPagamento);
 
-// Listar pagamentos do usuário logado
-router.get('/me', verifyToken, pagamentoController.listarPagamentosUsuario);
+// Listar pagamentos de um usuário
+router.get("/user/:id", verifyToken, pagamentoController.listarPagamentosUsuario);
 
 // Listar todos os pagamentos (admin)
-router.get('/all', verifyToken, requireRole('admin'), pagamentoController.listarTodosPagamentos);
+router.get("/all", verifyToken, requireRole("admin"), pagamentoController.listarTodosPagamentos);
 
 module.exports = router;
