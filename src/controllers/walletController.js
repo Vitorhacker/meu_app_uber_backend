@@ -1,86 +1,98 @@
 const pool = require("../db");
 
 // ======================
-// OBTER SALDO DE UM USUÁRIO
+// PEGAR SALDO DO USUÁRIO
 // ======================
-exports.getBalance = async (req, res) => {
+exports.getSaldo = async (req, res) => {
   try {
-    const { user_id } = req.params;
-    const result = await pool.query("SELECT balance, reserved, currency FROM wallets WHERE user_id = $1", [user_id]);
+    const { userId } = req.params;
+
+    const result = await pool.query(
+      "SELECT balance, currency, reserved, updated_at FROM wallets WHERE user_id = $1",
+      [userId]
+    );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Wallet não encontrada para este usuário." });
+      return res.status(404).json({ error: "Wallet não encontrada" });
     }
 
-    const wallet = result.rows[0];
-    return res.json({
-      user_id,
-      balance: parseFloat(wallet.balance),
-      reserved: parseFloat(wallet.reserved),
-      currency: wallet.currency
-    });
+    return res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao obter saldo da wallet:", err);
-    return res.status(500).json({ error: "Erro interno ao obter saldo da wallet." });
+    console.error("Erro ao buscar saldo:", err);
+    return res.status(500).json({ error: "Erro interno ao buscar saldo" });
   }
 };
 
 // ======================
 // ADICIONAR SALDO
 // ======================
-exports.addBalance = async (req, res) => {
+exports.addSaldo = async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { user_id, amount } = req.body;
-    if (!amount || amount <= 0) return res.status(400).json({ error: "Valor inválido para adicionar." });
+    const { userId, valor, metodo } = req.body;
 
-    const result = await pool.query(
-      `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2 RETURNING balance, reserved, currency`,
-      [amount, user_id]
+    if (!userId || !valor || !metodo) {
+      return res.status(400).json({ error: "Campos obrigatórios faltando" });
+    }
+
+    if (valor < 20 || valor > 300) {
+      return res.status(400).json({ error: "Valor deve ser entre R$ 20 e R$ 300" });
+    }
+
+    await client.query("BEGIN");
+
+    // Verificar wallet
+    const walletRes = await client.query("SELECT * FROM wallets WHERE user_id = $1", [userId]);
+    if (walletRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Wallet não encontrada" });
+    }
+
+    // TODO: Aqui você chamaria a integração real com Cartão ou PIX via backend
+    // Por enquanto vamos simular sucesso do pagamento
+    // Se quiser, depois podemos integrar PicPay ou outro gateway
+    console.log(`Simulando pagamento ${metodo} de R$ ${valor}`);
+
+    // Atualiza wallet
+    await client.query(
+      "UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2",
+      [valor, userId]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ error: "Wallet não encontrada para este usuário." });
+    // Registrar histórico (opcional)
+    await client.query(
+      `INSERT INTO wallet_history (user_id, amount, metodo, created_at)
+       VALUES ($1, $2, $3, NOW())`,
+      [userId, valor, metodo]
+    );
 
-    const wallet = result.rows[0];
-    return res.json({
-      user_id,
-      balance: parseFloat(wallet.balance),
-      reserved: parseFloat(wallet.reserved),
-      currency: wallet.currency
-    });
+    await client.query("COMMIT");
+
+    return res.json({ success: true, message: "Saldo adicionado com sucesso", valor });
   } catch (err) {
-    console.error("Erro ao adicionar saldo na wallet:", err);
-    return res.status(500).json({ error: "Erro interno ao adicionar saldo." });
+    await client.query("ROLLBACK");
+    console.error("Erro ao adicionar saldo:", err);
+    return res.status(500).json({ error: "Erro interno ao adicionar saldo" });
+  } finally {
+    client.release();
   }
 };
 
 // ======================
-// DEDUZIR SALDO
+// LISTAR HISTÓRICO DA WALLET
 // ======================
-exports.deductBalance = async (req, res) => {
+exports.getHistory = async (req, res) => {
   try {
-    const { user_id, amount } = req.body;
-    if (!amount || amount <= 0) return res.status(400).json({ error: "Valor inválido para deduzir." });
-
-    const walletRes = await pool.query("SELECT balance, reserved FROM wallets WHERE user_id = $1", [user_id]);
-    if (walletRes.rows.length === 0) return res.status(404).json({ error: "Wallet não encontrada." });
-
-    const { balance } = walletRes.rows[0];
-    if (parseFloat(balance) < amount) return res.status(400).json({ error: "Saldo insuficiente." });
+    const { userId } = req.params;
 
     const result = await pool.query(
-      `UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE user_id = $2 RETURNING balance, reserved, currency`,
-      [amount, user_id]
+      "SELECT * FROM wallet_history WHERE user_id = $1 ORDER BY created_at DESC",
+      [userId]
     );
 
-    const wallet = result.rows[0];
-    return res.json({
-      user_id,
-      balance: parseFloat(wallet.balance),
-      reserved: parseFloat(wallet.reserved),
-      currency: wallet.currency
-    });
+    return res.json(result.rows);
   } catch (err) {
-    console.error("Erro ao deduzir saldo na wallet:", err);
-    return res.status(500).json({ error: "Erro interno ao deduzir saldo." });
+    console.error("Erro ao buscar histórico da wallet:", err);
+    return res.status(500).json({ error: "Erro interno ao buscar histórico" });
   }
 };
