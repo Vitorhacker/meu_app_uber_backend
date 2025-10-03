@@ -3,25 +3,28 @@ const db = require("../db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = "supersegredo123"; // idealmente use process.env.JWT_SECRET
+const JWT_SECRET = "supersegredo123"; // idealmente usar process.env.JWT_SECRET
 
+// ================================
+// Criar Passageiro
+// ================================
 const createPassenger = async (req, res) => {
   try {
     const { nome, email, senha, cpf, telefone } = req.body;
 
-    // 1️⃣ Verifica se usuário já existe na tabela usuarios
+    // 1️⃣ Verifica se usuário já existe
     const existingUser = await db("usuarios").where({ email }).first();
     if (existingUser) {
       return res.status(400).json({ error: "E-mail já cadastrado" });
     }
 
-    // 2️⃣ Cria usuário na tabela usuarios
+    // 2️⃣ Cria usuário
     const hashedSenha = await bcrypt.hash(senha, 10);
-    const user = await db("usuarios")
+    const [user] = await db("usuarios")
       .insert({
         nome,
         email,
-        senha,
+        senha: hashedSenha,
         cpf,
         telefone,
         criado_em: new Date(),
@@ -29,33 +32,40 @@ const createPassenger = async (req, res) => {
         ativo: true,
         role: "passageiro",
       })
-      .returning("*")
-      .then(rows => rows[0]);
+      .returning("*");
 
-    // 3️⃣ Cria passageiro vinculado ao user_id
-    const passenger = await db("passageiros")
+    // 3️⃣ Cria passageiro vinculado ao usuário
+    const [passenger] = await db("passageiros")
       .insert({
         user_id: user.id,
         nome,
         email,
-        senha,
+        senha: hashedSenha,
         cpf,
         telefone,
-        creat_at: new Date(),
+        created_at: new Date(),
         saldo_carteira: 0,
         metodo_pagamento_preferido: "cartao",
       })
-      .returning("*")
-      .then(rows => rows[0]);
+      .returning("*");
 
     // 4️⃣ Gera token JWT
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "1h" });
 
-    // 5️⃣ Retorna token + userId + dados passageiro
-    res.status(201).json({ token, userId: user.id, passenger });
+    // 5️⃣ Retorna resposta
+    res.status(201).json({
+      token,
+      userId: user.id,
+      passenger,
+    });
   } catch (err) {
-    console.error("Erro ao criar passageiro:", err);
-    res.status(500).json({ error: "Não foi possível criar passageiro" });
+    console.error("🚨 Erro ao criar passageiro (detalhado):", {
+      message: err.message,
+      detail: err.detail,
+      code: err.code,
+      stack: err.stack,
+    });
+    res.status(500).json({ error: err.message || "Não foi possível criar passageiro" });
   }
 };
 
