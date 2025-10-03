@@ -1,14 +1,11 @@
+// src/routes/walletRoutes.js
 const express = require("express");
 const router = express.Router();
 const walletController = require("../controllers/walletController");
 
-// Pegar saldo do usuário
-router.get("/:userId", walletController.getSaldo);
-
-// Adicionar saldo à wallet
-router.post("/add", walletController.addSaldo);
-
-// Histórico de wallet (opcional)
-router.get("/history/:userId", walletController.getHistory);
+router.get("/:userId", walletController.getBalance);
+router.post("/add", walletController.addBalance);
+router.post("/confirm-pix", walletController.confirmPix);
+router.get("/transactions/:userId", walletController.listTransactions);
 
 module.exports = router;
