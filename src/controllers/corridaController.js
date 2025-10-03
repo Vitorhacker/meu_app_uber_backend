@@ -19,9 +19,7 @@ exports.create = async (req, res) => {
   } = req.body;
 
   try {
-    // ======================
     // Validar pagamento
-    // ======================
     const pagamentoRes = await pool.query(
       "SELECT * FROM pagamentos WHERE corrida_id IS NULL AND passageiro_id = $1 ORDER BY criado_em DESC LIMIT 1",
       [passageiro_id]
@@ -42,9 +40,6 @@ exports.create = async (req, res) => {
       });
     }
 
-    // ======================
-    // Valor estimado com tarifa atualizada
-    // ======================
     const now = new Date();
     const valor_final = valor_estimado || calcularValor(
       category,
@@ -80,7 +75,6 @@ exports.create = async (req, res) => {
 
     const corrida = result.rows[0];
 
-    // Atualizar pagamento vinculado
     await pool.query("UPDATE pagamentos SET corrida_id = $1 WHERE id = $2", [corrida.id, pagamento.id]);
 
     corrida.motorista = null;
@@ -195,27 +189,6 @@ exports.finish = async (req, res) => {
     );
 
     // ======================
-    // BUSCAR MOTORISTA PARA RIDE_HISTORY
-    // ======================
-    let motorista_nome = null;
-    let motorista_placa = null;
-    if (!corrida.motorista_nome || !corrida.motorista_placa) {
-      if (corrida.motorista_id) {
-        const motoristaRes = await client.query(
-          `SELECT nome, placa FROM motoristas WHERE id = $1`,
-          [corrida.motorista_id]
-        );
-        if (motoristaRes.rows.length > 0) {
-          motorista_nome = motoristaRes.rows[0].nome;
-          motorista_placa = motoristaRes.rows[0].placa;
-        }
-      }
-    } else {
-      motorista_nome = corrida.motorista_nome;
-      motorista_placa = corrida.motorista_placa;
-    }
-
-    // ======================
     // INSERIR NO RIDE_HISTORY
     // ======================
     await client.query(
@@ -233,8 +206,8 @@ exports.finish = async (req, res) => {
         corrida.destino_lng,
         distancia || corrida.distancia,
         duracao || corrida.duracao,
-        motorista_nome,
-        motorista_placa,
+        corrida.motorista?.nome,
+        corrida.motorista?.placa,
       ]
     );
 
@@ -369,4 +342,17 @@ exports.updatePayment = async (req, res) => {
 
       await pool.query("UPDATE wallets SET saldo = saldo - $1 WHERE user_id = $2", [corrida.valor_estimado, passageiro_id]);
 
-      if (corr
+      if (corrida.motorista_id) {
+        const valorMotorista = parseFloat((corrida.valor_estimado * 0.8).toFixed(2));
+        await pool.query("UPDATE wallets SET saldo = saldo + $1 WHERE user_id = $2", [valorMotorista, corrida.motorista_id]);
+      }
+    }
+
+    await pool.query(`UPDATE corridas SET forma_pagamento = $1 WHERE id = $2 RETURNING *`, [novaFormaPagamento, corridaId]);
+
+    return res.json({ message: "Forma de pagamento atualizada com sucesso.", novaFormaPagamento });
+  } catch (err) {
+    console.error("Erro ao atualizar forma de pagamento:", err);
+    return res.status(500).json({ error: "Erro interno ao atualizar forma de pagamento." });
+  }
+};
