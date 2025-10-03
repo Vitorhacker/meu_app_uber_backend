@@ -1,9 +1,9 @@
 // routes/passengerRoutes.js
 const express = require("express");
 const router = express.Router();
-const passengerController = require("../controllers/passengerController");
+const { createPassenger } = require("../controllers/passengerController");
 
-// rota de cadastro de passageiro
-router.post("/passenger", passengerController.createPassenger);
+// Rota de cadastro de passageiro
+router.post("/", createPassenger);
 
 module.exports = router;
