@@ -6,7 +6,6 @@ const { v4: uuidv4 } = require("uuid");
 // ======================
 exports.getBalance = async (req, res) => {
   const { userId } = req.params;
-
   if (!userId) return res.status(400).json({ error: "userId não informado" });
 
   const client = await pool.connect();
@@ -14,18 +13,23 @@ exports.getBalance = async (req, res) => {
     await client.query("BEGIN");
 
     let result = await client.query(
-      `SELECT balance, reserved, currency, updated_at FROM wallets WHERE user_id=$1`,
+      `SELECT balance, reserved, currency, updated_at 
+       FROM wallets 
+       WHERE user_id = $1`,
       [userId]
     );
 
     if (result.rows.length === 0) {
       await client.query(
-        `INSERT INTO wallets (user_id, balance, reserved, currency, updated_at) VALUES ($1,0,0,'BRL',NOW())`,
+        `INSERT INTO wallets (user_id, balance, reserved, currency, updated_at) 
+         VALUES ($1, 0, 0, 'BRL', NOW())`,
         [userId]
       );
 
       result = await client.query(
-        `SELECT balance, reserved, currency, updated_at FROM wallets WHERE user_id=$1`,
+        `SELECT balance, reserved, currency, updated_at 
+         FROM wallets 
+         WHERE user_id = $1`,
         [userId]
       );
     }
@@ -35,7 +39,7 @@ exports.getBalance = async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Erro getBalance:", err);
-    return res.status(500).json({ error: "Erro interno ao buscar saldo" });
+    return res.status(500).json({ error: "Erro interno ao buscar saldo", details: err.message });
   } finally {
     client.release();
   }
@@ -46,18 +50,22 @@ exports.getBalance = async (req, res) => {
 // ======================
 exports.addBalance = async (req, res) => {
   const { userId, valor, metodo } = req.body;
+  if (!userId || !valor || !metodo) {
+    return res.status(400).json({ error: "Campos obrigatórios faltando" });
+  }
 
-  if (!userId || !valor || !metodo) return res.status(400).json({ error: "Campos obrigatórios faltando" });
-  if (valor < 20 || valor > 300) return res.status(400).json({ error: "Valor deve estar entre R$ 20 e R$ 300" });
+  if (valor < 20 || valor > 300) {
+    return res.status(400).json({ error: "Valor deve estar entre R$ 20 e R$ 300" });
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const walletCheck = await client.query(`SELECT * FROM wallets WHERE user_id=$1`, [userId]);
+    const walletCheck = await client.query(`SELECT * FROM wallets WHERE user_id = $1`, [userId]);
     if (walletCheck.rows.length === 0) {
       await client.query(
-        `INSERT INTO wallets (user_id,balance,reserved,currency,updated_at) VALUES ($1,0,0,'BRL',NOW())`,
+        `INSERT INTO wallets (user_id, balance, reserved, currency, updated_at) VALUES ($1, 0, 0, 'BRL', NOW())`,
         [userId]
       );
     }
@@ -112,7 +120,8 @@ exports.confirmPix = async (req, res) => {
     await client.query("BEGIN");
 
     const txRes = await client.query(
-      `SELECT * FROM wallet_transactions WHERE user_id=$1 AND qr_code=$2 AND status='pendente'`,
+      `SELECT * FROM wallet_transactions 
+       WHERE user_id=$1 AND qr_code=$2 AND status='pendente'`,
       [userId, qrCodeData]
     );
 
@@ -124,7 +133,7 @@ exports.confirmPix = async (req, res) => {
     const tx = txRes.rows[0];
 
     await client.query(
-      `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id=$2`,
+      `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2`,
       [tx.valor, userId]
     );
 
@@ -145,7 +154,7 @@ exports.confirmPix = async (req, res) => {
 };
 
 // ======================
-// LISTAR TRANSAÇÕES
+// LISTAR TRANSACOES
 // ======================
 exports.listTransactions = async (req, res) => {
   const { userId } = req.params;
