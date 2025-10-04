@@ -2,14 +2,11 @@ const { v4: uuidv4 } = require("uuid");
 const fetch = require("node-fetch");
 const db = require("../db");
 
-// Credenciais PicPay vindas do .env
+// Credenciais PicPay
 const PICPAY_CLIENT_ID = process.env.PICPAY_CLIENT_ID;
 const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET;
 const PICPAY_BASE_URL = "https://appws.picpay.com/ecommerce/public";
 
-// ======================================================
-// Criar pagamento (Cartão / Wallet / Pix)
-// ======================================================
 exports.criarPagamento = async (req, res) => {
   try {
     const { corridaId, metodoPagamento, valor, passageiroId, motoristaId } = req.body;
@@ -18,7 +15,6 @@ exports.criarPagamento = async (req, res) => {
       return res.status(400).json({ error: "Campos obrigatórios faltando." });
     }
 
-    // Taxa da plataforma (20%)
     const taxaPlataforma = valor * 0.2;
     const valorLiquidoMotorista = valor - taxaPlataforma;
 
@@ -38,7 +34,7 @@ exports.criarPagamento = async (req, res) => {
     // PAGAMENTO CARTÃO (PicPay)
     // ======================================================
     if (metodoPagamento === "cartao") {
-      // Buscar card_token salvo no banco
+      // Buscar card_token do usuário
       const [rows] = await db.execute(
         "SELECT card_token FROM usuarios WHERE id = ?",
         [passageiroId]
@@ -50,10 +46,10 @@ exports.criarPagamento = async (req, res) => {
 
       const body = {
         referenceId: pagamento.id,
-        callbackUrl: process.env.PICPAY_CALLBACK_URL || "https://suaapi.com/picpay/callback",
-        returnUrl: process.env.PICPAY_RETURN_URL || "https://seuapp.com/pagamento/retorno",
+        callbackUrl: process.env.PICPAY_CALLBACK_URL,
+        returnUrl: process.env.PICPAY_RETURN_URL,
         value: valor,
-        card_token: rows[0].card_token, // ✅ Token salvo do cartão do usuário
+        card_token: rows[0].card_token,
       };
 
       const response = await fetch(`${PICPAY_BASE_URL}/payments`, {
@@ -82,110 +78,64 @@ exports.criarPagamento = async (req, res) => {
     // PAGAMENTO WALLET (saldo interno)
     // ======================================================
     if (metodoPagamento === "wallet") {
-      const [rows] = await db.execute(
-        "SELECT saldo FROM usuarios WHERE id = ?",
+      // Buscar wallet do passageiro
+      const [walletRows] = await db.execute(
+        "SELECT id, saldo_atual FROM wallets WHERE passageiro_id = ?",
         [passageiroId]
       );
 
-      if (!rows[0] || rows[0].saldo < valor) {
+      if (!walletRows[0] || walletRows[0].saldo_atual < valor) {
         return res.status(400).json({ error: "Saldo insuficiente na wallet." });
       }
 
-      await db.execute("UPDATE usuarios SET saldo = saldo - ? WHERE id = ?", [
-        valor,
-        passageiroId,
-      ]);
+      const walletId = walletRows[0].id;
 
-      await db.execute("UPDATE usuarios SET saldo = saldo + ? WHERE id = ?", [
-        valorLiquidoMotorista,
-        motoristaId,
-      ]);
+      // Debitar passageiro
+      await db.execute(
+        "UPDATE wallets SET saldo_atual = saldo_atual - ?, ultima_atualizacao = CURRENT_TIMESTAMP WHERE id = ?",
+        [valor, walletId]
+      );
+
+      // Registrar transação
+      await db.execute(
+        `INSERT INTO wallet_transactions 
+          (wallet_id, tipo, valor, metodo, status, referencia, criado_em) 
+          VALUES (?, 'saida', ?, 'wallet', 'confirmado', ?, CURRENT_TIMESTAMP)`,
+        [walletId, valor, `pagamento_corrida_${pagamento.id}`]
+      );
+
+      // Creditar motorista (wallet)
+      const [walletMotorista] = await db.execute(
+        "SELECT id FROM wallets WHERE passageiro_id = ?",
+        [motoristaId]
+      );
+
+      if (walletMotorista[0]) {
+        await db.execute(
+          "UPDATE wallets SET saldo_atual = saldo_atual + ?, ultima_atualizacao = CURRENT_TIMESTAMP WHERE id = ?",
+          [valorLiquidoMotorista, walletMotorista[0].id]
+        );
+
+        // Registrar transação do motorista
+        await db.execute(
+          `INSERT INTO wallet_transactions 
+            (wallet_id, tipo, valor, metodo, status, referencia, criado_em) 
+            VALUES (?, 'entrada', ?, 'wallet', 'confirmado', ?, CURRENT_TIMESTAMP)`,
+          [walletMotorista[0].id, valorLiquidoMotorista, `pagamento_corrida_${pagamento.id}`]
+        );
+      }
 
       pagamento.status = "pago";
     }
 
-    // Salvar no banco
+    // ======================================================
+    // Salvar pagamento
+    // ======================================================
     await db.execute("INSERT INTO pagamentos SET ?", pagamento);
 
     return res.status(201).json({ success: true, pagamento });
   } catch (error) {
     console.error("Erro criarPagamento:", error);
     return res.status(500).json({ error: "Erro interno ao criar pagamento." });
-  }
-};
-
-// ======================================================
-// Consultar status pagamento
-// ======================================================
-exports.consultarStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const [rows] = await db.execute("SELECT * FROM pagamentos WHERE id = ?", [id]);
-    if (!rows[0]) {
-      return res.status(404).json({ error: "Pagamento não encontrado." });
-    }
-
-    return res.json({ pagamento: rows[0] });
-  } catch (error) {
-    console.error("Erro consultarStatus:", error);
-    return res.status(500).json({ error: "Erro interno ao consultar pagamento." });
-  }
-};
-
-// ======================================================
-// Confirmar pagamento manual (admin)
-// ======================================================
-exports.confirmarPagamento = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const [rows] = await db.execute("SELECT * FROM pagamentos WHERE id = ?", [id]);
-    if (!rows[0]) {
-      return res.status(404).json({ error: "Pagamento não encontrado." });
-    }
-
-    if (rows[0].status === "pago") {
-      return res.status(400).json({ error: "Pagamento já confirmado." });
-    }
-
-    await db.execute("UPDATE pagamentos SET status = 'pago' WHERE id = ?", [id]);
-
-    return res.json({ success: true, message: "Pagamento confirmado." });
-  } catch (error) {
-    console.error("Erro confirmarPagamento:", error);
-    return res.status(500).json({ error: "Erro interno ao confirmar pagamento." });
-  }
-};
-
-// ======================================================
-// Listar pagamentos de um usuário
-// ======================================================
-exports.listarPagamentosUsuario = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const [rows] = await db.execute(
-      "SELECT * FROM pagamentos WHERE passageiro_id = ? OR motorista_id = ?",
-      [id, id]
-    );
-
-    return res.json({ pagamentos: rows });
-  } catch (error) {
-    console.error("Erro listarPagamentosUsuario:", error);
-    return res.status(500).json({ error: "Erro interno ao listar pagamentos." });
-  }
-};
-
-// ======================================================
-// Listar todos os pagamentos (Admin)
-// ======================================================
-exports.listarTodosPagamentos = async (req, res) => {
-  try {
-    const [rows] = await db.execute("SELECT * FROM pagamentos ORDER BY criado_em DESC");
-    return res.json({ pagamentos: rows });
-  } catch (error) {
-    console.error("Erro listarTodosPagamentos:", error);
-    return res.status(500).json({ error: "Erro interno ao listar todos os pagamentos." });
   }
 };
