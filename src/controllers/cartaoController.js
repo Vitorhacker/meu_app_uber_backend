@@ -1,6 +1,7 @@
 const fetch = require("node-fetch");
 const db = require("../db");
 
+// Credenciais PicPay
 const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET;
 const PICPAY_BASE_URL = "https://appws.picpay.com/ecommerce/public";
 

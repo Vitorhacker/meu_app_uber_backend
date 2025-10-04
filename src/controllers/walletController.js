@@ -1,4 +1,3 @@
-// src/controllers/walletController.js
 const pool = require("../db");
 const { v4: uuidv4 } = require("uuid");
 
@@ -7,39 +6,26 @@ const { v4: uuidv4 } = require("uuid");
 // ======================
 exports.getBalance = async (req, res) => {
   const { userId } = req.params;
-  console.log("💡 getBalance chamado com userId:", userId);
 
-  if (!userId) {
-    return res.status(400).json({ error: "userId não informado" });
-  }
+  if (!userId) return res.status(400).json({ error: "userId não informado" });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Tenta buscar wallet existente
     let result = await client.query(
-      `SELECT balance, reserved, currency, updated_at 
-       FROM wallets 
-       WHERE user_id = $1`,
+      `SELECT balance, reserved, currency, updated_at FROM wallets WHERE user_id=$1`,
       [userId]
     );
 
     if (result.rows.length === 0) {
-      console.log("💡 Wallet não encontrada, criando nova wallet para usuário:", userId);
-
-      // Cria wallet vazia
       await client.query(
-        `INSERT INTO wallets (user_id, balance, reserved, currency, updated_at) 
-         VALUES ($1, 0, 0, 'BRL', NOW())`,
+        `INSERT INTO wallets (user_id, balance, reserved, currency, updated_at) VALUES ($1,0,0,'BRL',NOW())`,
         [userId]
       );
 
-      // Rebusca a wallet criada
       result = await client.query(
-        `SELECT balance, reserved, currency, updated_at 
-         FROM wallets 
-         WHERE user_id = $1`,
+        `SELECT balance, reserved, currency, updated_at FROM wallets WHERE user_id=$1`,
         [userId]
       );
     }
@@ -48,8 +34,8 @@ exports.getBalance = async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("❌ Erro getBalance:", err);
-    return res.status(500).json({ error: "Erro interno ao buscar saldo", details: err.message });
+    console.error("Erro getBalance:", err);
+    return res.status(500).json({ error: "Erro interno ao buscar saldo" });
   } finally {
     client.release();
   }
@@ -60,26 +46,18 @@ exports.getBalance = async (req, res) => {
 // ======================
 exports.addBalance = async (req, res) => {
   const { userId, valor, metodo } = req.body;
-  console.log("💡 addBalance chamado:", { userId, valor, metodo });
 
-  if (!userId || !valor || !metodo) {
-    return res.status(400).json({ error: "Campos obrigatórios faltando" });
-  }
-
-  if (valor < 20 || valor > 300) {
-    return res.status(400).json({ error: "Valor deve estar entre R$ 20 e R$ 300" });
-  }
+  if (!userId || !valor || !metodo) return res.status(400).json({ error: "Campos obrigatórios faltando" });
+  if (valor < 20 || valor > 300) return res.status(400).json({ error: "Valor deve estar entre R$ 20 e R$ 300" });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Garantir que a wallet existe
-    const walletCheck = await client.query(`SELECT * FROM wallets WHERE user_id = $1`, [userId]);
+    const walletCheck = await client.query(`SELECT * FROM wallets WHERE user_id=$1`, [userId]);
     if (walletCheck.rows.length === 0) {
-      console.log("💡 Wallet não encontrada, criando nova wallet para addBalance");
       await client.query(
-        `INSERT INTO wallets (user_id, balance, reserved, currency, updated_at) VALUES ($1, 0, 0, 'BRL', NOW())`,
+        `INSERT INTO wallets (user_id,balance,reserved,currency,updated_at) VALUES ($1,0,0,'BRL',NOW())`,
         [userId]
       );
     }
@@ -115,7 +93,7 @@ exports.addBalance = async (req, res) => {
     return res.status(400).json({ error: "Método de pagamento inválido" });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("❌ Erro addBalance:", err);
+    console.error("Erro addBalance:", err);
     return res.status(500).json({ error: "Erro interno ao adicionar saldo", details: err.message });
   } finally {
     client.release();
@@ -127,19 +105,14 @@ exports.addBalance = async (req, res) => {
 // ======================
 exports.confirmPix = async (req, res) => {
   const { userId, qrCodeData } = req.body;
-  console.log("💡 confirmPix chamado:", { userId, qrCodeData });
-
-  if (!userId || !qrCodeData) {
-    return res.status(400).json({ error: "Dados obrigatórios faltando" });
-  }
+  if (!userId || !qrCodeData) return res.status(400).json({ error: "Dados obrigatórios faltando" });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const txRes = await client.query(
-      `SELECT * FROM wallet_transactions 
-       WHERE user_id=$1 AND qr_code=$2 AND status='pendente'`,
+      `SELECT * FROM wallet_transactions WHERE user_id=$1 AND qr_code=$2 AND status='pendente'`,
       [userId, qrCodeData]
     );
 
@@ -151,7 +124,7 @@ exports.confirmPix = async (req, res) => {
     const tx = txRes.rows[0];
 
     await client.query(
-      `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2`,
+      `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id=$2`,
       [tx.valor, userId]
     );
 
@@ -164,7 +137,7 @@ exports.confirmPix = async (req, res) => {
     return res.json({ success: true, novo_saldo: tx.valor });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("❌ Erro confirmPix:", err);
+    console.error("Erro confirmPix:", err);
     return res.status(500).json({ error: "Erro interno ao confirmar PIX", details: err.message });
   } finally {
     client.release();
@@ -172,15 +145,11 @@ exports.confirmPix = async (req, res) => {
 };
 
 // ======================
-// LISTAR TRANSACOES
+// LISTAR TRANSAÇÕES
 // ======================
 exports.listTransactions = async (req, res) => {
   const { userId } = req.params;
-  console.log("💡 listTransactions chamado com userId:", userId);
-
-  if (!userId) {
-    return res.status(400).json({ error: "userId não informado" });
-  }
+  if (!userId) return res.status(400).json({ error: "userId não informado" });
 
   try {
     const result = await pool.query(
@@ -189,7 +158,7 @@ exports.listTransactions = async (req, res) => {
     );
     return res.json(result.rows);
   } catch (err) {
-    console.error("❌ Erro listTransactions:", err);
+    console.error("Erro listTransactions:", err);
     return res.status(500).json({ error: "Erro interno ao listar transações", details: err.message });
   }
 };
