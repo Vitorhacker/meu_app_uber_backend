@@ -1,16 +1,18 @@
 const express = require("express");
 const router = express.Router();
-
 const cartaoController = require("../controllers/cartaoController");
-const { verifyToken } = require("../middlewares/authMiddleware");
 
-// Registrar cartão
-router.post("/register", verifyToken, cartaoController.registrarCartao);
+// ======================
+// CARTÃO DE PAGAMENTO
+// ======================
+
+// Registrar novo cartão
+router.post("/registrar", cartaoController.registrarCartao);
+
+// Consultar cartão cadastrado do usuário
+router.get("/consultar/:passageiroId", cartaoController.consultarCartao);
 
 // Remover cartão
-router.post("/remove", verifyToken, cartaoController.removerCartao);
-
-// Consultar cartão salvo
-router.get("/:passageiroId", verifyToken, cartaoController.consultarCartao);
+router.post("/remover", cartaoController.removerCartao);
 
 module.exports = router;
