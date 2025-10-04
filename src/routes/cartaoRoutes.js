@@ -2,13 +2,20 @@ const express = require("express");
 const router = express.Router();
 const cartaoController = require("../controllers/cartaoController");
 
-// Registrar cartão + cobrança automática
+// ======================================================
+// Registrar cartão + cobrança automática via PicPay
+// ======================================================
 router.post("/registrar", cartaoController.registrarCartao);
 
-// Verificar se existe cartão (não retorna dados sensíveis)
+// ======================================================
+// Verificar se o usuário possui cartão cadastrado
+// Não retorna dados sensíveis do cartão
+// ======================================================
 router.get("/:passageiroId", cartaoController.verificarCartao);
 
-// Remover cartão
+// ======================================================
+// Remover cartão do usuário (apaga dados criptografados)
+// ======================================================
 router.delete("/remover", cartaoController.removerCartao);
 
 module.exports = router;
