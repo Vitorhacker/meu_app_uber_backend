@@ -2,11 +2,7 @@ const express = require("express");
 const router = express.Router();
 const walletController = require("../controllers/walletController");
 
-// ======================
-// WALLET / CARTEIRA
-// ======================
-
-// Obter saldo do usuário
+// Obter saldo
 router.get("/saldo/:userId", walletController.getBalance);
 
 // Adicionar saldo

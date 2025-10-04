@@ -2,17 +2,13 @@ const express = require("express");
 const router = express.Router();
 const cartaoController = require("../controllers/cartaoController");
 
-// ======================
-// CARTÃO DE PAGAMENTO
-// ======================
-
-// Registrar novo cartão
+// Registrar cartão
 router.post("/registrar", cartaoController.registrarCartao);
 
-// Consultar cartão cadastrado do usuário
-router.get("/consultar/:passageiroId", cartaoController.consultarCartao);
+// Verificar cartão
+router.get("/verify/:passageiroId", cartaoController.verificarCartao);
 
 // Remover cartão
-router.post("/remover", cartaoController.removerCartao);
+router.delete("/remover", cartaoController.removerCartao);
 
 module.exports = router;

@@ -1,12 +1,8 @@
-const axios = require("axios");
-const db = require("../db");
+const pool = require("../db");
 const { v4: uuidv4 } = require("uuid");
 
-const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET;
-const PICPAY_BASE_URL = "https://appws.picpay.com/ecommerce/public";
-
 // ======================================================
-// Registrar cartão e salvar token
+// Registrar cartão do usuário
 // ======================================================
 exports.registrarCartao = async (req, res) => {
   try {
@@ -16,71 +12,74 @@ exports.registrarCartao = async (req, res) => {
       return res.status(400).json({ error: "Campos obrigatórios faltando." });
     }
 
-    const body = {
-      cardNumber: numero,
-      holderName: nome,
-      expirationMonth: mes,
-      expirationYear: ano,
-      cvv: cvv,
-    };
+    const card_token = `card_${uuidv4()}`;
 
-    const response = await axios.post(`${PICPAY_BASE_URL}/cards`, body, {
-      headers: { "Content-Type": "application/json", "x-picpay-token": PICPAY_CLIENT_SECRET },
-    });
-
-    const data = response.data;
-
-    if (!data.card_token) {
-      console.error("Erro registrar cartão:", data);
-      return res.status(400).json({ error: "Falha ao registrar cartão no PicPay." });
-    }
-
-    await db.execute("UPDATE usuarios SET card_token = ? WHERE id = ?", [data.card_token, passageiroId]);
+    // Salva o token diretamente na tabela usuarios (ou cartoes se quiser múltiplos)
+    await pool.query(
+      `UPDATE usuarios SET card_token = $1 WHERE id = $2`,
+      [card_token, passageiroId]
+    );
 
     return res.json({
       success: true,
       message: "Cartão registrado com sucesso.",
-      card_token: data.card_token,
+      card_token,
     });
   } catch (error) {
-    console.error("Erro registrarCartao:", error.response?.data || error.message);
+    console.error("❌ Erro registrarCartao:", error.message);
     return res.status(500).json({ error: "Erro interno ao registrar cartão." });
   }
 };
 
 // ======================================================
-// Consultar cartão do usuário
+// Verificar se o usuário possui cartão
 // ======================================================
-exports.consultarCartao = async (req, res) => {
+exports.verificarCartao = async (req, res) => {
   try {
     const { passageiroId } = req.params;
 
-    const [rows] = await db.execute("SELECT card_token FROM usuarios WHERE id = ?", [passageiroId]);
+    if (!passageiroId)
+      return res.status(400).json({ error: "ID do passageiro é obrigatório." });
 
-    if (!rows[0] || !rows[0].card_token) {
+    const result = await pool.query(
+      "SELECT card_token FROM usuarios WHERE id = $1",
+      [passageiroId]
+    );
+
+    if (!result.rows.length || !result.rows[0].card_token) {
       return res.json({ possuiCartao: false });
     }
 
-    return res.json({ possuiCartao: true, card_token: rows[0].card_token });
+    return res.json({
+      possuiCartao: true,
+      card_token: result.rows[0].card_token,
+    });
   } catch (error) {
-    console.error("Erro consultarCartao:", error);
-    return res.status(500).json({ error: "Erro interno ao consultar cartão." });
+    console.error("❌ Erro verificarCartao:", error.message);
+    return res.status(500).json({ error: "Erro interno ao verificar cartão." });
   }
 };
 
 // ======================================================
-// Remover cartão
+// Remover cartão do usuário
 // ======================================================
 exports.removerCartao = async (req, res) => {
   try {
     const { passageiroId } = req.body;
-    if (!passageiroId) return res.status(400).json({ error: "ID do passageiro é obrigatório." });
+    if (!passageiroId)
+      return res.status(400).json({ error: "ID do passageiro é obrigatório." });
 
-    await db.execute("UPDATE usuarios SET card_token = NULL WHERE id = ?", [passageiroId]);
+    await pool.query(
+      "UPDATE usuarios SET card_token = NULL WHERE id = $1",
+      [passageiroId]
+    );
 
-    return res.json({ success: true, message: "Cartão removido com sucesso." });
+    return res.json({
+      success: true,
+      message: "Cartão removido com sucesso.",
+    });
   } catch (error) {
-    console.error("Erro removerCartao:", error);
+    console.error("❌ Erro removerCartao:", error.message);
     return res.status(500).json({ error: "Erro interno ao remover cartão." });
   }
 };
