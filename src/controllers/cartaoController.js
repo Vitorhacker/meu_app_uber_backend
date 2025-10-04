@@ -6,7 +6,14 @@ const axios = require("axios");
 const PICPAY_CLIENT_ID = process.env.PICPAY_CLIENT_ID;
 const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET;
 const PICPAY_API_BASE = process.env.PICPAY_API_BASE || "https://appws.picpay.com/ecommerce/public/payments";
-const ENCRYPTION_KEY = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32";
+
+// ======================
+// AES-256-CBC precisa de chave com 32 bytes
+// ======================
+let key = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32";
+if (key.length < 32) key = key.padEnd(32, "0");   // preenche com zeros
+if (key.length > 32) key = key.slice(0, 32);      // corta excesso
+const ENCRYPTION_KEY = Buffer.from(key, "utf-8");
 const IV_LENGTH = 16;
 
 // ======================
@@ -14,7 +21,7 @@ const IV_LENGTH = 16;
 // ======================
 function encrypt(text) {
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(ENCRYPTION_KEY, "utf-8"), iv);
+  const cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
   let encrypted = cipher.update(text, "utf8", "hex");
   encrypted += cipher.final("hex");
   return iv.toString("hex") + ":" + encrypted;
@@ -43,21 +50,14 @@ exports.registrarCartao = async (req, res) => {
     await client.query("BEGIN");
 
     // Atualiza cartão no DB
-    try {
-      await client.query(
-        `UPDATE usuarios 
-         SET card_token=$1, numero_enc=$2, mes_enc=$3, ano_enc=$4, cvv_enc=$5, nome_enc=$6 
-         WHERE id=$7`,
-        [card_token, numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc, passageiroId]
-      );
-    } catch (dbErr) {
-      console.error("❌ Erro DB salvar cartão:", dbErr);
-      return res.status(500).json({ error: "Erro ao salvar cartão no DB.", details: dbErr.message });
-    }
+    await client.query(
+      `UPDATE usuarios 
+       SET card_token=$1, numero_enc=$2, mes_enc=$3, ano_enc=$4, cvv_enc=$5, nome_enc=$6 
+       WHERE id=$7`,
+      [card_token, numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc, passageiroId]
+    );
 
-    // ======================
     // Cobrança PicPay
-    // ======================
     const paymentId = `pay_${uuidv4()}`;
     const [firstName, ...lastNameParts] = nome.split(" ");
     const lastName = lastNameParts.join(" ") || firstName;
@@ -81,18 +81,13 @@ exports.registrarCartao = async (req, res) => {
       picpay_status = response.data.status;
       picpay_response = response.data;
 
-      // Consulta status da transação direto no PicPay
-      try {
-        const check = await axios.get(`${PICPAY_API_BASE}/${paymentId}`, {
-          auth: { username: PICPAY_CLIENT_ID, password: PICPAY_CLIENT_SECRET }
-        });
-        picpay_status = check.data.status;
-        picpay_response = check.data;
-      } catch (checkErr) {
-        console.error("❌ Erro ao consultar status PicPay:", checkErr.response?.data || checkErr.message);
-      }
+      // Consulta status
+      const check = await axios.get(`${PICPAY_API_BASE}/${paymentId}`, {
+        auth: { username: PICPAY_CLIENT_ID, password: PICPAY_CLIENT_SECRET }
+      });
+      picpay_status = check.data.status;
+      picpay_response = check.data;
 
-      // Atualiza saldo e transações
       const txStatus = picpay_status === "paid" || picpay_status === "success" ? "pago" : "falha";
 
       if (txStatus === "pago") {
@@ -171,7 +166,7 @@ exports.verificarCartao = async (req, res) => {
 exports.removerCartao = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { passageiroId } = req.body; // se preferir via URL, use req.params
+    const { passageiroId } = req.body;
 
     if (!passageiroId) return res.status(400).json({ error: "passageiroId é obrigatório." });
 
