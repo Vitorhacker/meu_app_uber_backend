@@ -3,16 +3,16 @@ const { v4: uuidv4 } = require("uuid");
 const crypto = require("crypto");
 const axios = require("axios");
 
-const PICPAY_CLIENT_ID = process.env.PICPAY_CLIENT_ID;
-const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET;
+const PICPAY_CLIENT_ID = process.env.PICPAY_CLIENT_ID || "e2dd857f793e4e40bdc161c01baba740";
+const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET || "iv2eH6EKrtCtbsZr6rI93Ha8e7xZmwVd";
 const PICPAY_API_BASE = process.env.PICPAY_API_BASE || "https://appws.picpay.com/ecommerce/public/payments";
 
 // ======================
 // AES-256-CBC precisa de chave com 32 bytes
 // ======================
 let key = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32";
-if (key.length < 32) key = key.padEnd(32, "0");   // preenche com zeros
-if (key.length > 32) key = key.slice(0, 32);      // corta excesso
+if (key.length < 32) key = key.padEnd(32, "0");
+if (key.length > 32) key = key.slice(0, 32);
 const ENCRYPTION_KEY = Buffer.from(key, "utf-8");
 const IV_LENGTH = 16;
 
@@ -74,8 +74,10 @@ exports.registrarCartao = async (req, res) => {
 
     try {
       const response = await axios.post(PICPAY_API_BASE, payload, {
-        auth: { username: PICPAY_CLIENT_ID, password: PICPAY_CLIENT_SECRET },
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "x-picpay-token": PICPAY_CLIENT_SECRET
+        }
       });
 
       picpay_status = response.data.status;
@@ -83,7 +85,7 @@ exports.registrarCartao = async (req, res) => {
 
       // Consulta status
       const check = await axios.get(`${PICPAY_API_BASE}/${paymentId}`, {
-        auth: { username: PICPAY_CLIENT_ID, password: PICPAY_CLIENT_SECRET }
+        headers: { "x-picpay-token": PICPAY_CLIENT_SECRET }
       });
       picpay_status = check.data.status;
       picpay_response = check.data;
