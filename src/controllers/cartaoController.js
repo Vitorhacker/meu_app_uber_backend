@@ -81,9 +81,7 @@ exports.registrarCartao = async (req, res) => {
       picpay_status = response.data.status;
       picpay_response = response.data;
 
-      // ======================
       // Consulta status da transação direto no PicPay
-      // ======================
       try {
         const check = await axios.get(`${PICPAY_API_BASE}/${paymentId}`, {
           auth: { username: PICPAY_CLIENT_ID, password: PICPAY_CLIENT_SECRET }
@@ -138,6 +136,56 @@ exports.registrarCartao = async (req, res) => {
     await client.query("ROLLBACK");
     console.error("❌ Erro registrarCartao inesperado:", error.response?.data || error.message);
     return res.status(500).json({ error: "Erro inesperado ao registrar cartão.", details: error.response?.data || error.message });
+  } finally {
+    client.release();
+  }
+};
+
+// ======================
+// Verificar se usuário possui cartão
+// ======================
+exports.verificarCartao = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { passageiroId } = req.params;
+
+    const result = await client.query(
+      "SELECT card_token FROM usuarios WHERE id=$1",
+      [passageiroId]
+    );
+
+    if (result.rowCount === 0) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    return res.json({ possuiCartao: !!result.rows[0].card_token });
+  } catch (err) {
+    console.error("❌ Erro verificarCartao:", err.message);
+    return res.status(500).json({ error: "Erro ao verificar cartão." });
+  } finally {
+    client.release();
+  }
+};
+
+// ======================
+// Remover cartão do usuário
+// ======================
+exports.removerCartao = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { passageiroId } = req.body; // se preferir via URL, use req.params
+
+    if (!passageiroId) return res.status(400).json({ error: "passageiroId é obrigatório." });
+
+    await client.query(
+      `UPDATE usuarios 
+       SET card_token=NULL, numero_enc=NULL, mes_enc=NULL, ano_enc=NULL, cvv_enc=NULL, nome_enc=NULL 
+       WHERE id=$1`,
+      [passageiroId]
+    );
+
+    return res.json({ success: true, message: "Cartão removido com sucesso." });
+  } catch (err) {
+    console.error("❌ Erro removerCartao:", err.message);
+    return res.status(500).json({ error: "Erro ao remover cartão." });
   } finally {
     client.release();
   }

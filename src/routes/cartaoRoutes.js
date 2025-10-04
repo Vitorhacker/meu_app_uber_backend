@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const cartaoController = require("../controllers/cartaoController");
 
+// Middleware para validar body JSON
+router.use(express.json());
+
 // ======================================================
 // Registrar cartão + cobrança automática via PicPay
 // ======================================================
