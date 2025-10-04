@@ -35,15 +35,25 @@ exports.criarPagamento = async (req, res) => {
     };
 
     // ======================================================
-    // PAGAMENTO CARTÃO (PicPay ou simulado)
+    // PAGAMENTO CARTÃO (PicPay)
     // ======================================================
     if (metodoPagamento === "cartao") {
+      // Buscar card_token salvo no banco
+      const [rows] = await db.execute(
+        "SELECT card_token FROM usuarios WHERE id = ?",
+        [passageiroId]
+      );
+
+      if (!rows[0]?.card_token) {
+        return res.status(400).json({ error: "Usuário não possui cartão cadastrado." });
+      }
+
       const body = {
         referenceId: pagamento.id,
         callbackUrl: process.env.PICPAY_CALLBACK_URL || "https://suaapi.com/picpay/callback",
         returnUrl: process.env.PICPAY_RETURN_URL || "https://seuapp.com/pagamento/retorno",
         value: valor,
-        buyer: { id: passageiroId },
+        card_token: rows[0].card_token, // ✅ Token salvo do cartão do usuário
       };
 
       const response = await fetch(`${PICPAY_BASE_URL}/payments`, {
@@ -72,13 +82,24 @@ exports.criarPagamento = async (req, res) => {
     // PAGAMENTO WALLET (saldo interno)
     // ======================================================
     if (metodoPagamento === "wallet") {
-      const [rows] = await db.execute("SELECT saldo FROM usuarios WHERE id = ?", [passageiroId]);
+      const [rows] = await db.execute(
+        "SELECT saldo FROM usuarios WHERE id = ?",
+        [passageiroId]
+      );
+
       if (!rows[0] || rows[0].saldo < valor) {
         return res.status(400).json({ error: "Saldo insuficiente na wallet." });
       }
 
-      await db.execute("UPDATE usuarios SET saldo = saldo - ? WHERE id = ?", [valor, passageiroId]);
-      await db.execute("UPDATE usuarios SET saldo = saldo + ? WHERE id = ?", [valorLiquidoMotorista, motoristaId]);
+      await db.execute("UPDATE usuarios SET saldo = saldo - ? WHERE id = ?", [
+        valor,
+        passageiroId,
+      ]);
+
+      await db.execute("UPDATE usuarios SET saldo = saldo + ? WHERE id = ?", [
+        valorLiquidoMotorista,
+        motoristaId,
+      ]);
 
       pagamento.status = "pago";
     }
