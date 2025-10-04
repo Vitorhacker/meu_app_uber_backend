@@ -12,12 +12,14 @@ const PICPAY_CALLBACK_URL = process.env.PICPAY_CALLBACK_URL;
 // ======================
 // Criptografia do cartão
 // ======================
-const ENCRYPTION_KEY = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32";
+const RAW_KEY = process.env.CARD_ENCRYPTION_KEY || "12345678901234567890123456789012"; // 32 caracteres
+const ENCRYPTION_KEY = Buffer.alloc(32);
+Buffer.from(RAW_KEY).copy(ENCRYPTION_KEY, 0, 0, 32); // garante 32 bytes
 const IV_LENGTH = 16;
 
 function encrypt(text) {
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(ENCRYPTION_KEY, "utf-8"), iv);
+  const cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
   let encrypted = cipher.update(text, "utf8", "hex");
   encrypted += cipher.final("hex");
   return iv.toString("hex") + ":" + encrypted;
@@ -32,7 +34,6 @@ exports.registrarCartao = async (req, res) => {
   try {
     const { passageiroId, numero, mes, ano, cvv, nome, valor } = req.body;
 
-    // Validação básica
     if (!passageiroId || !numero || !mes || !ano || !cvv || !nome || !valor) {
       return res.status(400).json({ 
         error: "Campos obrigatórios faltando.",
@@ -51,7 +52,6 @@ exports.registrarCartao = async (req, res) => {
 
     await client.query("BEGIN");
 
-    // Atualiza cartão no DB
     try {
       await client.query(
         `UPDATE usuarios 
@@ -64,9 +64,7 @@ exports.registrarCartao = async (req, res) => {
       return res.status(500).json({ error: "Erro ao salvar cartão no DB.", details: dbErr.message });
     }
 
-    // ======================
     // Cobrança PicPay
-    // ======================
     const paymentId = `pay_${uuidv4()}`;
     const [firstName, ...lastNameParts] = nome.split(" ");
     const lastName = lastNameParts.join(" ") || firstName;
@@ -91,7 +89,6 @@ exports.registrarCartao = async (req, res) => {
       picpay_status = response.data.status;
       picpay_response = response.data;
 
-      // Atualiza saldo e transações
       const txStatus = picpay_status === "success" ? "pago" : "falha";
       if (picpay_status === "success") {
         await client.query(
