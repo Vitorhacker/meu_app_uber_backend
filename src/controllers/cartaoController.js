@@ -12,7 +12,7 @@ const PICPAY_CALLBACK_URL = process.env.PICPAY_CALLBACK_URL;
 // ======================
 // Criptografia do cartão
 // ======================
-const ENCRYPTION_KEY = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32"; // 32 bytes
+const ENCRYPTION_KEY = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32";
 const IV_LENGTH = 16;
 
 function encrypt(text) {
@@ -24,18 +24,23 @@ function encrypt(text) {
 }
 
 // ======================
-// Registrar cartão e cobrar via PicPay
+// Registrar cartão + cobrança PicPay
 // ======================
 exports.registrarCartao = async (req, res) => {
   const client = await pool.connect();
+
   try {
     const { passageiroId, numero, mes, ano, cvv, nome, valor } = req.body;
 
+    // Validação básica
     if (!passageiroId || !numero || !mes || !ano || !cvv || !nome || !valor) {
-      return res.status(400).json({ error: "Campos obrigatórios faltando." });
+      return res.status(400).json({ 
+        error: "Campos obrigatórios faltando.",
+        received: req.body
+      });
     }
 
-    // Criptografa os dados do cartão
+    // Criptografia
     const numero_enc = encrypt(numero);
     const mes_enc = encrypt(mes);
     const ano_enc = encrypt(ano);
@@ -46,16 +51,21 @@ exports.registrarCartao = async (req, res) => {
 
     await client.query("BEGIN");
 
-    // Salva o cartão criptografado
-    await client.query(
-      `UPDATE usuarios 
-       SET card_token=$1, numero_enc=$2, mes_enc=$3, ano_enc=$4, cvv_enc=$5, nome_enc=$6 
-       WHERE id=$7`,
-      [card_token, numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc, passageiroId]
-    );
+    // Atualiza cartão no DB
+    try {
+      await client.query(
+        `UPDATE usuarios 
+         SET card_token=$1, numero_enc=$2, mes_enc=$3, ano_enc=$4, cvv_enc=$5, nome_enc=$6 
+         WHERE id=$7`,
+        [card_token, numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc, passageiroId]
+      );
+    } catch (dbErr) {
+      console.error("❌ Erro DB salvar cartão:", dbErr);
+      return res.status(500).json({ error: "Erro ao salvar cartão no DB.", details: dbErr.message });
+    }
 
     // ======================
-    // Cobrança via PicPay
+    // Cobrança PicPay
     // ======================
     const paymentId = `pay_${uuidv4()}`;
     const [firstName, ...lastNameParts] = nome.split(" ");
@@ -66,77 +76,65 @@ exports.registrarCartao = async (req, res) => {
       callbackUrl: PICPAY_CALLBACK_URL,
       returnUrl: PICPAY_RETURN_URL,
       value: parseFloat(valor),
-      buyer: {
-        firstName,
-        lastName,
-        document: "00000000000", // ideal: trazer do cadastro do usuário
-        email: "cliente@example.com", // ideal: trazer do cadastro
-        phone: "11999999999" // ideal: trazer do cadastro
-      },
-      creditCard: {
-        number: numero,
-        cvc: cvv,
-        holderName: nome,
-        expirationMonth: mes,
-        expirationYear: ano
-      }
+      buyer: { firstName, lastName, document: "00000000000", email: "cliente@example.com", phone: "11999999999" },
+      creditCard: { number: numero, cvc: cvv, holderName: nome, expirationMonth: mes, expirationYear: ano }
     };
 
     let picpay_status = "failed";
+    let picpay_response = null;
 
     try {
-      const response = await axios.post(`${PICPAY_API_BASE}`, payload, {
+      const response = await axios.post(PICPAY_API_BASE, payload, {
         auth: { username: PICPAY_CLIENT_ID, password: PICPAY_CLIENT_SECRET },
         headers: { "Content-Type": "application/json" }
       });
-
       picpay_status = response.data.status;
+      picpay_response = response.data;
 
+      // Atualiza saldo e transações
+      const txStatus = picpay_status === "success" ? "pago" : "falha";
       if (picpay_status === "success") {
-        // Atualiza carteira
         await client.query(
           `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id=$2`,
           [valor, passageiroId]
         );
-
-        await client.query(
-          `INSERT INTO wallet_transactions (user_id, valor, metodo, status, created_at) 
-           VALUES ($1, $2, 'cartao', 'pago', NOW())`,
-          [passageiroId, valor]
-        );
-      } else {
-        await client.query(
-          `INSERT INTO wallet_transactions (user_id, valor, metodo, status, created_at) 
-           VALUES ($1, $2, 'cartao', 'falha', NOW())`,
-          [passageiroId, valor]
-        );
       }
 
-    } catch (err) {
-      console.error("❌ Erro cobrança PicPay:", err.response?.data || err.message);
-      // Marca como falha na transação
+      await client.query(
+        `INSERT INTO wallet_transactions (user_id, valor, metodo, status, created_at) 
+         VALUES ($1, $2, 'cartao', $3, NOW())`,
+        [passageiroId, valor, txStatus]
+      );
+
+    } catch (picErr) {
+      console.error("❌ Erro cobrança PicPay:", picErr.response?.data || picErr.message);
       await client.query(
         `INSERT INTO wallet_transactions (user_id, valor, metodo, status, created_at) 
          VALUES ($1, $2, 'cartao', 'falha', NOW())`,
         [passageiroId, valor]
       );
+      return res.status(500).json({ error: "Erro ao processar pagamento PicPay.", details: picErr.response?.data || picErr.message });
     }
 
     await client.query("COMMIT");
 
     return res.json({
       success: picpay_status === "success",
-      message: picpay_status === "success" 
-               ? "Cartão registrado e saldo adicionado com sucesso." 
-               : "Cartão registrado, mas a cobrança falhou.",
+      message: picpay_status === "success" ? "Cartão registrado e saldo adicionado." : "Cartão registrado, mas cobrança falhou.",
       card_token,
-      picpay_status
+      picpay_status,
+      picpay_response,
+      encrypted_fields: { numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc },
+      payload_sent: payload
     });
 
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("❌ Erro registrarCartao:", error.response?.data || error.message);
-    return res.status(500).json({ error: "Erro ao registrar cartão ou processar pagamento." });
+    console.error("❌ Erro registrarCartao inesperado:", error.response?.data || error.message);
+    return res.status(500).json({ 
+      error: "Erro inesperado ao registrar cartão.", 
+      details: error.response?.data || error.message 
+    });
   } finally {
     client.release();
   }
@@ -148,16 +146,10 @@ exports.registrarCartao = async (req, res) => {
 exports.verificarCartao = async (req, res) => {
   try {
     const { passageiroId } = req.params;
-
-    const result = await pool.query(
-      "SELECT card_token FROM usuarios WHERE id = $1",
-      [passageiroId]
-    );
-
+    const result = await pool.query("SELECT card_token FROM usuarios WHERE id = $1", [passageiroId]);
     if (!result.rows.length || !result.rows[0].card_token) {
       return res.json({ possuiCartao: false });
     }
-
     return res.json({ possuiCartao: true, card_token: result.rows[0].card_token });
   } catch (error) {
     console.error("❌ Erro verificarCartao:", error.message);
