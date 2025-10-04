@@ -2,11 +2,11 @@ const express = require("express");
 const router = express.Router();
 const cartaoController = require("../controllers/cartaoController");
 
-// Registrar cartão
+// Registrar cartão + cobrança automática
 router.post("/registrar", cartaoController.registrarCartao);
 
-// Verificar cartão
-router.get("/verify/:passageiroId", cartaoController.verificarCartao);
+// Verificar se existe cartão (não retorna dados sensíveis)
+router.get("/:passageiroId", cartaoController.verificarCartao);
 
 // Remover cartão
 router.delete("/remover", cartaoController.removerCartao);
