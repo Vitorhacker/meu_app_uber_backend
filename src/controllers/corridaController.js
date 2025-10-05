@@ -177,7 +177,7 @@ exports.getCurrentRideByPassenger = async (req, res) => {
   const { passageiro_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT c.*, m.id as motorista_id, m.nome as motorista_nome, m.modelo as motorista_modelo, m.placa as motorista_placa
+      `SELECT c.*, m.id as motorista_id, m.nome as motorista_nome, m.modelo as motorista_modelo, m.placa as motorista_placa, c.motorista_lat, c.motorista_lng
        FROM corridas c
        LEFT JOIN motoristas m ON c.motorista_id = m.id
        WHERE c.passageiro_id = $1 AND c.status != 'finalizada' AND c.status != 'cancelada'
@@ -214,7 +214,7 @@ exports.getCurrentRideByDriver = async (req, res) => {
   const { motorista_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT c.*, p.id as passageiro_id, p.nome as passageiro_nome
+      `SELECT c.*, p.id as passageiro_id, p.nome as passageiro_nome, c.passageiro_lat, c.passageiro_lng
        FROM corridas c
        LEFT JOIN passageiros p ON c.passageiro_id = p.id
        WHERE c.motorista_id = $1 AND c.status != 'finalizada' AND c.status != 'cancelada'
