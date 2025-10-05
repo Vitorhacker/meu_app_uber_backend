@@ -1,4 +1,3 @@
-// src/controllers/corridaController.js
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 
@@ -271,22 +270,24 @@ exports.getOnlineDriversNearby = async (req, res) => {
 // ATUALIZAR LOCALIZAÇÃO EM TEMPO REAL
 // ======================
 exports.updateLocation = async (req, res) => {
-  const { userId, userType, lat, lng } = req.body;
-  if (!userId || !userType || lat == null || lng == null)
-    return res.status(400).json({ error: "Dados inválidos para atualizar localização" });
+  const { corrida_id, userType, lat, lng, motorista_id } = req.body;
 
-  const tableFieldLat = userType === "passageiro" ? "passageiro_lat" : "motorista_lat";
-  const tableFieldLng = userType === "passageiro" ? "passageiro_lng" : "motorista_lng";
-  const idField = userType === "passageiro" ? "passageiro_id" : "motorista_id";
+  if (userType === "motorista" && !motorista_id) return res.status(400).json({ error: "motorista_id obrigatório para motorista" });
+
+  const fieldLat = userType === "passageiro" ? "passageiro_lat" : "motorista_lat";
+  const fieldLng = userType === "passageiro" ? "passageiro_lng" : "motorista_lng";
 
   try {
-    const result = await pool.query(
-      `UPDATE corridas SET ${tableFieldLat}=$1, ${tableFieldLng}=$2 WHERE ${idField}=$3 RETURNING *`,
-      [lat, lng, userId]
-    );
+    let result;
+    if (userType === "motorista") {
+      // Atualiza localização do motorista na tabela motoristas
+      result = await pool.query(`UPDATE motoristas SET lat=$1, lng=$2 WHERE id=$3 RETURNING *`, [lat, lng, motorista_id]);
+    } else {
+      result = await pool.query(`UPDATE corridas SET ${fieldLat}=$1, ${fieldLng}=$2 WHERE id=$3 RETURNING *`, [lat, lng, corrida_id]);
+    }
 
-    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
-    return res.json({ message: "Localização atualizada", corrida: result.rows[0] });
+    if (!result.rows.length) return res.status(404).json({ error: "Registro não encontrado" });
+    return res.json({ message: "Localização atualizada", data: result.rows[0] });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Erro ao atualizar localização", details: err.message });
