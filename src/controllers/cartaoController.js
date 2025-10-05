@@ -3,21 +3,21 @@ const { v4: uuidv4 } = require("uuid");
 const crypto = require("crypto");
 const axios = require("axios");
 
-const PICPAY_CLIENT_ID = process.env.PICPAY_CLIENT_ID || "e2dd857f793e4e40bdc161c01baba740";
-const PICPAY_CLIENT_SECRET = process.env.PICPAY_CLIENT_SECRET || "iv2eH6EKrtCtbsZr6rI93Ha8e7xZmwVd";
-const PICPAY_API_BASE = process.env.PICPAY_API_BASE || "https://appws.picpay.com/ecommerce/public/payments";
+// Configurações PagBank
+const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN;
+const PAGBANK_API_BASE = process.env.PAGBANK_API_BASE;
 
 // ======================
 // AES-256-CBC precisa de chave com 32 bytes
 // ======================
-let key = process.env.CARD_ENCRYPTION_KEY || "minha-chave-super-secreta-32";
-if (key.length < 32) key = key.padEnd(32, "0");
+let key = Buffer.from(process.env.CARD_ENC_KEY_BASE64 || "", "base64");
+if (key.length < 32) key = Buffer.concat([key, Buffer.alloc(32 - key.length)]);
 if (key.length > 32) key = key.slice(0, 32);
-const ENCRYPTION_KEY = Buffer.from(key, "utf-8");
+const ENCRYPTION_KEY = key;
 const IV_LENGTH = 16;
 
 // ======================
-// Criptografia do cartão
+// Função para criptografar dados do cartão
 // ======================
 function encrypt(text) {
   const iv = crypto.randomBytes(IV_LENGTH);
@@ -28,11 +28,10 @@ function encrypt(text) {
 }
 
 // ======================
-// Registrar cartão + cobrança PicPay
+// Registrar cartão + cobrança via PagBank
 // ======================
 exports.registrarCartao = async (req, res) => {
   const client = await pool.connect();
-
   try {
     const { passageiroId, numero, mes, ano, cvv, nome, valor } = req.body;
 
@@ -41,56 +40,57 @@ exports.registrarCartao = async (req, res) => {
     }
 
     const numero_enc = encrypt(numero);
-    const mes_enc = encrypt(mes);
-    const ano_enc = encrypt(ano);
+    const validade_enc = encrypt(`${mes}/${ano}`);
     const cvv_enc = encrypt(cvv);
-    const nome_enc = encrypt(nome);
     const card_token = `card_${uuidv4()}`;
 
     await client.query("BEGIN");
 
     // Atualiza cartão no DB
     await client.query(
-      `UPDATE usuarios 
-       SET card_token=$1, numero_enc=$2, mes_enc=$3, ano_enc=$4, cvv_enc=$5, nome_enc=$6 
-       WHERE id=$7`,
-      [card_token, numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc, passageiroId]
+      `INSERT INTO cartoes (passageiro_id, nome_titular, cpf, numero_enc, validade_enc, cvv_enc)
+       VALUES ($1,$2,'00000000000',$3,$4,$5)
+       ON CONFLICT (passageiro_id) 
+       DO UPDATE SET nome_titular=EXCLUDED.nome_titular, numero_enc=EXCLUDED.numero_enc, validade_enc=EXCLUDED.validade_enc, cvv_enc=EXCLUDED.cvv_enc`,
+      [passageiroId, nome, numero_enc, validade_enc, cvv_enc]
     );
 
-    // Cobrança PicPay
+    // Criação da cobrança via PagBank
     const paymentId = `pay_${uuidv4()}`;
-    const [firstName, ...lastNameParts] = nome.split(" ");
-    const lastName = lastNameParts.join(" ") || firstName;
-
     const payload = {
-      referenceId: paymentId,
-      value: parseFloat(valor),
-      buyer: { firstName, lastName, document: "00000000000", email: "cliente@example.com", phone: "11999999999" },
-      creditCard: { number: numero, cvc: cvv, holderName: nome, expirationMonth: mes, expirationYear: ano }
+      reference_id: paymentId,
+      amount: parseFloat(valor),
+      payment_method: "credit_card",
+      card: {
+        number: numero,
+        holder_name: nome,
+        expiration_month: mes,
+        expiration_year: ano,
+        cvv: cvv
+      },
+      customer: {
+        name: nome,
+        document: "00000000000",
+        email: "cliente@example.com",
+        phone: "11999999999"
+      }
     };
 
-    let picpay_status = "failed";
-    let picpay_response = null;
+    let pagbank_status = "failed";
+    let pagbank_response = null;
 
     try {
-      const response = await axios.post(PICPAY_API_BASE, payload, {
+      const response = await axios.post(`${PAGBANK_API_BASE}/v2/transactions`, payload, {
         headers: {
-          "Content-Type": "application/json",
-          "x-picpay-token": PICPAY_CLIENT_SECRET
+          Authorization: `Bearer ${PAGBANK_TOKEN}`,
+          "Content-Type": "application/json"
         }
       });
 
-      picpay_status = response.data.status;
-      picpay_response = response.data;
+      pagbank_status = response.data.status;
+      pagbank_response = response.data;
 
-      // Consulta status
-      const check = await axios.get(`${PICPAY_API_BASE}/${paymentId}`, {
-        headers: { "x-picpay-token": PICPAY_CLIENT_SECRET }
-      });
-      picpay_status = check.data.status;
-      picpay_response = check.data;
-
-      const txStatus = picpay_status === "paid" || picpay_status === "success" ? "pago" : "falha";
+      const txStatus = pagbank_status === "paid" ? "pago" : "falha";
 
       if (txStatus === "pago") {
         await client.query(
@@ -105,27 +105,25 @@ exports.registrarCartao = async (req, res) => {
         [passageiroId, valor, txStatus]
       );
 
-    } catch (picErr) {
-      console.error("❌ Erro cobrança PicPay:", picErr.response?.data || picErr.message);
+    } catch (err) {
+      console.error("❌ Erro cobrança PagBank:", err.response?.data || err.message);
       await client.query(
         `INSERT INTO wallet_transactions (user_id, valor, metodo, status, created_at) 
          VALUES ($1, $2, 'cartao', 'falha', NOW())`,
         [passageiroId, valor]
       );
-      return res.status(500).json({ error: "Erro ao processar pagamento PicPay.", details: picErr.response?.data || picErr.message });
+      return res.status(500).json({ error: "Erro ao processar pagamento PagBank.", details: err.response?.data || err.message });
     }
 
     await client.query("COMMIT");
 
     return res.json({
-      success: picpay_status === "paid" || picpay_status === "success",
-      message: picpay_status === "paid" || picpay_status === "success" 
-               ? "Cartão registrado e saldo adicionado." 
-               : "Cartão registrado, mas cobrança falhou.",
+      success: pagbank_status === "paid",
+      message: pagbank_status === "paid" ? "Cartão registrado e saldo adicionado." : "Cartão registrado, mas cobrança falhou.",
       card_token,
-      picpay_status,
-      picpay_response,
-      encrypted_fields: { numero_enc, mes_enc, ano_enc, cvv_enc, nome_enc },
+      pagbank_status,
+      pagbank_response,
+      encrypted_fields: { numero_enc, validade_enc, cvv_enc },
       payload_sent: payload
     });
 
@@ -145,15 +143,12 @@ exports.verificarCartao = async (req, res) => {
   const client = await pool.connect();
   try {
     const { passageiroId } = req.params;
-
     const result = await client.query(
-      "SELECT card_token FROM usuarios WHERE id=$1",
+      "SELECT * FROM cartoes WHERE passageiro_id=$1",
       [passageiroId]
     );
 
-    if (result.rowCount === 0) return res.status(404).json({ error: "Usuário não encontrado." });
-
-    return res.json({ possuiCartao: !!result.rows[0].card_token });
+    return res.json({ possuiCartao: result.rowCount > 0 });
   } catch (err) {
     console.error("❌ Erro verificarCartao:", err.message);
     return res.status(500).json({ error: "Erro ao verificar cartão." });
@@ -173,9 +168,7 @@ exports.removerCartao = async (req, res) => {
     if (!passageiroId) return res.status(400).json({ error: "passageiroId é obrigatório." });
 
     await client.query(
-      `UPDATE usuarios 
-       SET card_token=NULL, numero_enc=NULL, mes_enc=NULL, ano_enc=NULL, cvv_enc=NULL, nome_enc=NULL 
-       WHERE id=$1`,
+      `DELETE FROM cartoes WHERE passageiro_id=$1`,
       [passageiroId]
     );
 

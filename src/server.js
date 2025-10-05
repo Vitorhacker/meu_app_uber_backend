@@ -68,6 +68,17 @@ try {
 }
 
 // ==========================
+// Registro manual de webhook PagBank
+// ==========================
+try {
+  const webhookPagBankRoutes = require("./routes/webhookPagBankRoutes");
+  app.use("/api/webhooks/pagbank", webhookPagBankRoutes);
+  console.log("📌 Rota crítica carregada manualmente: /api/webhooks/pagbank");
+} catch (err) {
+  console.warn("⚠️ Não foi possível carregar webhookPagBankRoutes:", err.message);
+}
+
+// ==========================
 // Alias explícito para corridas
 // ==========================
 try {
