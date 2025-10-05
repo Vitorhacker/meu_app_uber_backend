@@ -13,9 +13,14 @@ router.put("/:id/finish", verifyToken, corridaController.finish);
 router.put("/:id/cancel", verifyToken, corridaController.cancel);
 
 // ======================
-// Buscar corrida atual
+// Buscar corrida atual do passageiro
 // ======================
 router.get("/passageiro/:passageiro_id/atual", verifyToken, corridaController.getCurrentRideByPassenger);
+
+// ======================
+// Buscar corrida atual do motorista
+// ======================
+router.get("/motorista/:motorista_id/atual", verifyToken, corridaController.getCurrentRideByDriver);
 
 // ======================
 // Buscar motoristas online próximos

@@ -53,19 +53,6 @@ exports.create = async (req, res) => {
 
     const corrida = result.rows[0];
     corrida.motorista = null;
-
-    // Traçar rota usando OSRM
-    try {
-      const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${origemCoords.longitude},${origemCoords.latitude};${destinoCoords.longitude},${destinoCoords.latitude}?overview=full&geometries=geojson`;
-      const osrmRes = await axios.get(osrmUrl);
-      if (osrmRes.data.routes && osrmRes.data.routes.length > 0) {
-        corrida.route = osrmRes.data.routes[0].geometry;
-      }
-    } catch (err) {
-      console.warn("Erro ao obter rota OSRM:", err.message);
-      corrida.route = null;
-    }
-
     return res.status(201).json(corrida);
   } catch (err) {
     console.error("Erro ao criar corrida:", err);
@@ -113,10 +100,10 @@ exports.start = async (req, res) => {
       `UPDATE corridas SET status = 'corrida_em_andamento', inicio_em = NOW() WHERE id = $1 RETURNING *`,
       [req.params.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: "Corrida não encontrada" });
+    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao iniciar corrida:", err);
+    console.error(err);
     return res.status(500).json({ error: "Erro ao iniciar corrida", details: err.message });
   }
 };
@@ -125,45 +112,17 @@ exports.start = async (req, res) => {
 // FINALIZAR CORRIDA
 // ======================
 exports.finish = async (req, res) => {
-  const client = await pool.connect();
   try {
-    await client.query("BEGIN");
     const { distancia, duracao } = req.body;
-    const corrida_id = req.params.id;
-
-    const corridaRes = await client.query(`SELECT * FROM corridas WHERE id = $1`, [corrida_id]);
-    if (corridaRes.rows.length === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Corrida não encontrada" }); }
-
-    const corrida = corridaRes.rows[0];
-    const stops = corrida.paradas ? JSON.parse(corrida.paradas).length : 0;
-    const now = new Date();
-    const valor_final = calcularValor(corrida.category, distancia || corrida.distancia, duracao || corrida.duracao, stops, now);
-
-    await client.query(
-      `UPDATE corridas SET status = 'finalizada', fim_em = NOW(), valor_final = $1, distancia = $2, duracao = $3 WHERE id = $4`,
-      [valor_final, distancia || corrida.distancia, duracao || corrida.duracao, corrida_id]
+    const result = await pool.query(
+      `UPDATE corridas SET status = 'finalizada', fim_em = NOW(), distancia = $1, duracao = $2 WHERE id = $3 RETURNING *`,
+      [distancia, duracao, req.params.id]
     );
-
-    await client.query(
-      `INSERT INTO ride_history
-       (passageiro_id, corrida_id, origem, destino, origem_lat, origem_lng, destino_lat, destino_lng, distancia, duracao, motorista_nome, motorista_placa, criado_em)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
-      [
-        corrida.passageiro_id, corrida.id, corrida.origem, corrida.destino,
-        corrida.origem_lat, corrida.origem_lng, corrida.destino_lat, corrida.destino_lng,
-        distancia || corrida.distancia, duracao || corrida.duracao,
-        corrida.motorista?.nome, corrida.motorista?.placa
-      ]
-    );
-
-    await client.query("COMMIT");
-    return res.json({ message: "Corrida finalizada com sucesso", corrida: { ...corrida, valor_final } });
+    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+    return res.json(result.rows[0]);
   } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Erro ao finalizar corrida:", err);
+    console.error(err);
     return res.status(500).json({ error: "Erro ao finalizar corrida", details: err.message });
-  } finally {
-    client.release();
   }
 };
 
@@ -176,10 +135,10 @@ exports.cancel = async (req, res) => {
       `UPDATE corridas SET status = 'cancelada', fim_em = NOW() WHERE id = $1 RETURNING *`,
       [req.params.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: "Corrida não encontrada" });
-    return res.json({ message: "Corrida cancelada com sucesso", corrida: result.rows[0] });
+    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+    return res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao cancelar corrida:", err);
+    console.error(err);
     return res.status(500).json({ error: "Erro ao cancelar corrida", details: err.message });
   }
 };
@@ -195,8 +154,7 @@ exports.getCurrentRideByPassenger = async (req, res) => {
        FROM corridas c
        LEFT JOIN motoristas m ON c.motorista_id = m.id
        WHERE c.passageiro_id = $1 AND c.status NOT IN ('finalizada','cancelada')
-       ORDER BY c.criado_em DESC
-       LIMIT 1`,
+       ORDER BY c.criado_em DESC LIMIT 1`,
       [passageiro_id]
     );
 
@@ -222,32 +180,35 @@ exports.getCurrentRideByPassenger = async (req, res) => {
 };
 
 // ======================
+// BUSCAR CORRIDA ATUAL DO MOTORISTA
+// ======================
+exports.getCurrentRideByDriver = async (req, res) => {
+  const { motorista_id } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM corridas WHERE motorista_id = $1 AND status NOT IN ('finalizada','cancelada') ORDER BY criado_em DESC LIMIT 1`,
+      [motorista_id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Nenhuma corrida encontrada" });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
+  }
+};
+
+// ======================
 // BUSCAR MOTORISTAS ONLINE PRÓXIMOS
 // ======================
 exports.getOnlineDriversNearby = async (req, res) => {
   const { lat, lng, radius } = req.query;
   if (!lat || !lng) return res.status(400).json({ error: "lat e lng obrigatórios" });
 
-  const radiusKm = parseFloat(radius) || 5;
   try {
-    try {
-      const result = await pool.query(
-        `SELECT id, nome, modelo, placa, lat AS latitude, lng AS longitude,
-                earth_distance(ll_to_earth($1, $2), ll_to_earth(lat, lng)) AS distancia_m
-         FROM motoristas
-         WHERE online = true
-           AND earth_distance(ll_to_earth($1, $2), ll_to_earth(lat, lng)) <= $3 * 1000
-         ORDER BY distancia_m ASC`,
-        [lat, lng, radiusKm]
-      );
-      return res.json(result.rows);
-    } catch (geoErr) {
-      console.warn("⚠️ Extensões geográficas indisponíveis, usando fallback simples.");
-      const result = await pool.query(
-        `SELECT id, nome, modelo, placa, lat AS latitude, lng AS longitude FROM motoristas WHERE online = true`
-      );
-      return res.json(result.rows);
-    }
+    const result = await pool.query(
+      `SELECT id, nome, modelo, placa, lat AS latitude, lng AS longitude FROM motoristas WHERE online = true`
+    );
+    return res.json(result.rows);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Erro ao buscar motoristas", details: err.message });
