@@ -1,3 +1,4 @@
+// controllers/corridaController.js
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 const axios = require("axios");
@@ -15,6 +16,7 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
 
     const url = `${OSRM_BASE_URL}/${coords.join(";")}?overview=full&geometries=geojson&steps=true`;
     const res = await axios.get(url);
+
     if (res.data.routes && res.data.routes.length > 0) {
       const route = res.data.routes[0];
       return {
@@ -24,9 +26,10 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
         steps: route.legs
       };
     }
+    console.warn("⚠️ Nenhuma rota retornada pelo OSRM");
     return null;
   } catch (err) {
-    console.error("Erro ao calcular rota:", err.message);
+    console.error("❌ Erro ao calcular rota:", err.message);
     return null;
   }
 }
@@ -39,7 +42,7 @@ function emitRideUpdate(io, corrida_id, data) {
 }
 
 // ======================
-// CRIAR CORRIDA (com depuração detalhada)
+// CRIAR CORRIDA (Homescreen)
 // ======================
 exports.create = async (req, res) => {
   const io = req.app.get("io");
@@ -49,42 +52,29 @@ exports.create = async (req, res) => {
     horario_partida, pagamento
   } = req.body;
 
-  // ==========================
-  // Depuração de campos obrigatórios
-  // ==========================
   const missingFields = [];
+  if (!passageiro_id) missingFields.push("passageiro_id não enviado");
+  if (!origem) missingFields.push("origem não enviada");
+  if (!origemCoords || origemCoords.latitude == null || origemCoords.longitude == null) missingFields.push("origemCoords inválido");
+  if (!destino) missingFields.push("destino não enviado");
+  if (!destinoCoords || destinoCoords.latitude == null || destinoCoords.longitude == null) missingFields.push("destinoCoords inválido");
+  if (!category) missingFields.push("category não enviado");
 
-  if (!passageiro_id) missingFields.push("passageiro_id não foi enviado");
-  if (!origem) missingFields.push("origem não foi enviada");
-  if (!origemCoords || origemCoords.latitude == null || origemCoords.longitude == null)
-    missingFields.push("origemCoords inválido ou incompleto");
-  if (!destino) missingFields.push("destino não foi enviado");
-  if (!destinoCoords || destinoCoords.latitude == null || destinoCoords.longitude == null)
-    missingFields.push("destinoCoords inválido ou incompleto");
-  if (!category) missingFields.push("category não foi enviado");
-
-  // Validação do horário
   let partida = new Date();
   if (horario_partida) {
     partida = new Date(horario_partida);
-    if (isNaN(partida.getTime())) {
-      missingFields.push(`horario_partida inválido: ${horario_partida}`);
-    }
+    if (isNaN(partida.getTime())) missingFields.push(`horario_partida inválido: ${horario_partida}`);
   }
 
   if (missingFields.length > 0) {
-    console.warn("Erro ao criar corrida - campos faltando ou inválidos:", missingFields);
-    return res.status(400).json({
-      error: "Campos obrigatórios ausentes ou inválidos",
-      details: missingFields
-    });
+    console.warn("⚠️ Campos obrigatórios ausentes ou inválidos:", missingFields);
+    return res.status(400).json({ error: "Campos obrigatórios ausentes ou inválidos", details: missingFields });
   }
 
   try {
     const rota = await calcularRota(origemCoords, destinoCoords, stops);
     const distancia_total = rota?.distancia / 1000 || 10; // km
     const duracao_total = rota?.duracao / 60 || 20; // min
-
     const valor_final = valor_estimado || calcularValor(category, distancia_total, duracao_total, stops?.length || 0, new Date());
 
     const result = await pool.query(
@@ -112,12 +102,12 @@ exports.create = async (req, res) => {
     const corrida = result.rows[0];
     corrida.motorista = null;
 
-    // Emitir atualização para passageiro (sala)
     emitRideUpdate(io, corrida.id, { status: corrida.status, corrida });
 
+    console.log("✅ Corrida criada:", corrida.id);
     return res.status(201).json(corrida);
   } catch (err) {
-    console.error("Erro ao criar corrida:", err);
+    console.error("❌ Erro ao criar corrida:", err.message);
     return res.status(500).json({ error: "Erro ao criar corrida", details: err.message });
   }
 };
@@ -149,15 +139,15 @@ exports.accept = async (req, res) => {
       `SELECT id, nome, modelo, placa, categoria, lat, lng FROM motoristas WHERE id=$1`,
       [motorista_id]
     );
-
     corrida.motorista = motoristaRes.rows[0] || null;
     corrida.valor_motorista_estimado = parseFloat((corrida.valor_estimado * 0.8).toFixed(2));
 
     emitRideUpdate(io, corrida.id, { status: corrida.status, corrida });
 
+    console.log(`✅ Motorista ${motorista_id} aceitou a corrida ${corrida.id}`);
     return res.json(corrida);
   } catch (err) {
-    console.error("Erro ao aceitar corrida:", err);
+    console.error("❌ Erro ao aceitar corrida:", err.message);
     return res.status(500).json({ error: "Erro ao aceitar corrida", details: err.message });
   }
 };
@@ -176,9 +166,10 @@ exports.driverArrived = async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     emitRideUpdate(io, req.params.id, { status: 'motorista_chegou', corrida: result.rows[0] });
+    console.log(`📍 Motorista chegou na corrida ${req.params.id}`);
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao atualizar chegada do motorista:", err.message);
     return res.status(500).json({ error: "Erro ao atualizar chegada do motorista", details: err.message });
   }
 };
@@ -197,9 +188,10 @@ exports.start = async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     emitRideUpdate(io, req.params.id, { status: 'corrida_em_andamento', corrida: result.rows[0] });
+    console.log(`🏁 Corrida ${req.params.id} iniciada`);
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao iniciar corrida:", err.message);
     return res.status(500).json({ error: "Erro ao iniciar corrida", details: err.message });
   }
 };
@@ -224,7 +216,6 @@ exports.updateLocation = async (req, res) => {
 
     if (!result.rows.length) return res.status(404).json({ error: "Registro não encontrado" });
 
-    // Recalcular rota
     const corridaRes = await pool.query(`SELECT destino_lat, destino_lng, paradas, status FROM corridas WHERE id=$1`, [corrida_id]);
     const corrida = corridaRes.rows[0];
     const stops = corrida.paradas || [];
@@ -239,7 +230,6 @@ exports.updateLocation = async (req, res) => {
       ]);
     }
 
-    // Emitir atualização em tempo real
     emitRideUpdate(io, corrida_id, {
       userType,
       lat,
@@ -250,7 +240,7 @@ exports.updateLocation = async (req, res) => {
 
     return res.json({ message: "Localização atualizada e rota recalculada", data: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao atualizar localização:", err.message);
     return res.status(500).json({ error: "Erro ao atualizar localização", details: err.message });
   }
 };
@@ -279,10 +269,10 @@ exports.finish = async (req, res) => {
     }
 
     emitRideUpdate(io, corrida.id, { status: 'finalizada', corrida });
-
+    console.log(`✅ Corrida ${req.params.id} finalizada`);
     return res.json(corrida);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao finalizar corrida:", err.message);
     return res.status(500).json({ error: "Erro ao finalizar corrida", details: err.message });
   }
 };
@@ -292,17 +282,20 @@ exports.finish = async (req, res) => {
 // ======================
 exports.cancel = async (req, res) => {
   const io = req.app.get("io");
+
   try {
     const result = await pool.query(
       `UPDATE corridas SET status='cancelada', fim_em=NOW() WHERE id=$1 RETURNING *`,
       [req.params.id]
     );
+
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     emitRideUpdate(io, req.params.id, { status: 'cancelada', corrida: result.rows[0] });
+    console.log(`❌ Corrida ${req.params.id} cancelada`);
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao cancelar corrida:", err.message);
     return res.status(500).json({ error: "Erro ao cancelar corrida", details: err.message });
   }
 };
@@ -336,7 +329,26 @@ exports.getCurrentRideByPassenger = async (req, res) => {
 
     return res.json(ride);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao buscar corrida passageiro:", err.message);
+    return res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
+  }
+};
+
+// ======================
+// BUSCAR CORRIDA ATUAL DO MOTORISTA
+// ======================
+exports.getCurrentRideByDriver = async (req, res) => {
+  try {
+    const { motorista_id } = req.params;
+    const result = await pool.query(
+      `SELECT * FROM corridas WHERE motorista_id=$1 AND status NOT IN ('finalizada','cancelada') ORDER BY criado_em DESC LIMIT 1`,
+      [motorista_id]
+    );
+
+    if (!result.rows.length) return res.status(404).json({ error: "Nenhuma corrida encontrada" });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("❌ Erro ao buscar corrida motorista:", err.message);
     return res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
   }
 };
@@ -355,7 +367,7 @@ exports.getOnlineDriversNearby = async (req, res) => {
 
     return res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao buscar motoristas:", err.message);
     return res.status(500).json({ error: "Erro ao buscar motoristas", details: err.message });
   }
 };

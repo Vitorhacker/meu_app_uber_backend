@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -42,6 +43,9 @@ io.on("connection", (socket) => {
   console.log("📡 Cliente conectado:", socket.id);
 });
 
+// Disponibiliza io para controllers
+app.set("io", io);
+
 // ==========================
 // Carregamento automático de rotas
 // ==========================
@@ -67,9 +71,6 @@ try {
   console.warn("⚠️ Não foi possível carregar passengerRoutes:", err.message);
 }
 
-// ==========================
-// Registro manual de webhook PagBank
-// ==========================
 try {
   const webhookPagBankRoutes = require("./routes/webhookPagBankRoutes");
   app.use("/api/webhooks/pagbank", webhookPagBankRoutes);
@@ -78,9 +79,6 @@ try {
   console.warn("⚠️ Não foi possível carregar webhookPagBankRoutes:", err.message);
 }
 
-// ==========================
-// Alias explícito para corridas
-// ==========================
 try {
   const corridaRoutes = require("./routes/corridaRoutes");
   app.use("/api/corrida", corridaRoutes);
