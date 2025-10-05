@@ -6,13 +6,13 @@ const jwt = require("jsonwebtoken");
 const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 
 // ================================
-// Criar Passageiro
+// Criar Passageiro com token permanente
 // ================================
 const createPassenger = async (req, res) => {
   try {
     const { nome, email, senha, cpf, telefone } = req.body;
 
-    // 1️⃣ Valida campos obrigatórios
+    // 1️⃣ Validação de campos obrigatórios
     if (!nome || !email || !senha || !cpf || !telefone) {
       return res.status(400).json({ error: "Todos os campos são obrigatórios!" });
     }
@@ -29,7 +29,7 @@ const createPassenger = async (req, res) => {
       return res.status(400).json({ error: "Senha fraca! Use ao menos 6 caracteres, incluindo letras e números." });
     }
 
-    // 4️⃣ Verifica duplicidade de email, CPF e telefone
+    // 4️⃣ Checa duplicidade de email, CPF e telefone
     const existingUser = await pool.query(
       "SELECT * FROM usuarios WHERE email=$1 OR cpf=$2 OR telefone=$3",
       [email, cpf, telefone]
@@ -58,10 +58,16 @@ const createPassenger = async (req, res) => {
     );
     const passenger = passengerResult.rows[0];
 
-    // 7️⃣ Gera token JWT
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "1h" });
+    // 7️⃣ Gera token JWT permanente (sem expiração)
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET);
 
-    // 8️⃣ Retorna sucesso
+    // 8️⃣ Armazena token permanente no banco para autenticação futura
+    await pool.query(
+      "UPDATE usuarios SET token_permanente=$1 WHERE id=$2",
+      [token, user.id]
+    );
+
+    // 9️⃣ Retorna sucesso com token
     return res.status(201).json({
       message: "Conta criada com sucesso!",
       token,
