@@ -81,8 +81,7 @@ try {
 
 try {
   const corridaRoutes = require("./routes/corridaRoutes");
-  app.use("/api/corrida", corridaRoutes);
-  app.use("/api/corridas", corridaRoutes); // alias plural
+  app.use("/api/corridas", corridaRoutes);
 } catch (err) {
   console.warn("⚠️ Não foi possível carregar corridaRoutes:", err.message);
 }

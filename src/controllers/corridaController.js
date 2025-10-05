@@ -287,28 +287,30 @@ exports.cancel = async (req, res) => {
 exports.getCurrentRideByPassenger = async (req, res) => {
   try {
     const { passageiro_id } = req.params;
+
     const result = await pool.query(
-      `SELECT c.*, m.id as motorista_id, m.nome as motorista_nome, m.modelo as motorista_modelo, m.placa as motorista_placa, m.lat as motorista_lat, m.lng as motorista_lng
+      `SELECT c.*, m.id AS motorista_id, m.nome AS motorista_nome, m.modelo AS motorista_modelo, m.placa AS motorista_placa, m.lat AS motorista_lat, m.lng AS motorista_lng
        FROM corridas c
-       LEFT JOIN motoristas m ON c.motorista_id=m.id
-       WHERE c.passageiro_id=$1 AND c.status NOT IN ('finalizada','cancelada')
-       ORDER BY c.criado_em DESC LIMIT 1`,
+       LEFT JOIN motoristas m ON c.motorista_id = m.id
+       WHERE c.passageiro_id = $1 AND c.status NOT IN ('finalizada','cancelada')
+       ORDER BY c.criado_em DESC
+       LIMIT 1`,
       [passageiro_id]
     );
 
-    if (!result.rows.length) return res.status(404).json({ error: "Nenhuma corrida encontrada" });
+    if (!result.rows.length) return res.status(404).json({ error: "Nenhuma corrida encontrada para este passageiro" });
 
-    const ride = result.rows[0];
-    ride.motorista = ride.motorista_id ? {
-      id: ride.motorista_id,
-      nome: ride.motorista_nome,
-      modelo: ride.motorista_modelo,
-      placa: ride.motorista_placa,
-      lat: ride.motorista_lat,
-      lng: ride.motorista_lng,
+    const corrida = result.rows[0];
+    corrida.motorista = corrida.motorista_id ? {
+      id: corrida.motorista_id,
+      nome: corrida.motorista_nome,
+      modelo: corrida.motorista_modelo,
+      placa: corrida.motorista_placa,
+      lat: corrida.motorista_lat,
+      lng: corrida.motorista_lng,
     } : null;
 
-    return res.json(ride);
+    return res.json(corrida);
   } catch (err) {
     console.error("❌ Erro ao buscar corrida passageiro:", err.message);
     return res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
@@ -321,12 +323,17 @@ exports.getCurrentRideByPassenger = async (req, res) => {
 exports.getCurrentRideByDriver = async (req, res) => {
   try {
     const { motorista_id } = req.params;
+
     const result = await pool.query(
-      `SELECT * FROM corridas WHERE motorista_id=$1 AND status NOT IN ('finalizada','cancelada') ORDER BY criado_em DESC LIMIT 1`,
+      `SELECT * FROM corridas
+       WHERE motorista_id=$1 AND status NOT IN ('finalizada','cancelada')
+       ORDER BY criado_em DESC
+       LIMIT 1`,
       [motorista_id]
     );
 
     if (!result.rows.length) return res.status(404).json({ error: "Nenhuma corrida encontrada" });
+
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ Erro ao buscar corrida motorista:", err.message);

@@ -24,7 +24,7 @@ router.post("/:id/finish", verifyToken, corridaController.finish);
 // Cancelar corrida
 router.post("/:id/cancel", verifyToken, corridaController.cancel);
 
-// Buscar corrida atual do passageiro
+// **Rota que queremos criar**
 router.get("/passageiro/:passageiro_id/atual", verifyToken, corridaController.getCurrentRideByPassenger);
 
 // Buscar corrida atual do motorista
