@@ -1,3 +1,4 @@
+// src/controllers/corridaController.js
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 
@@ -79,7 +80,7 @@ exports.accept = async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
-    const motoristaRes = await pool.query(`SELECT id, nome, modelo, placa, categoria FROM motoristas WHERE id = $1`, [motorista_id]);
+    const motoristaRes = await pool.query(`SELECT id, nome, modelo, placa, categoria, lat, lng FROM motoristas WHERE id = $1`, [motorista_id]);
     corrida.motorista = motoristaRes.rows[0] || null;
     corrida.valor_motorista_estimado = parseFloat((corrida.valor_estimado * 0.8).toFixed(2));
 
@@ -177,7 +178,7 @@ exports.getCurrentRideByPassenger = async (req, res) => {
   const { passageiro_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT c.*, m.id as motorista_id, m.nome as motorista_nome, m.modelo as motorista_modelo, m.placa as motorista_placa, c.motorista_lat, c.motorista_lng
+      `SELECT c.*, m.id as motorista_id, m.nome as motorista_nome, m.modelo as motorista_modelo, m.placa as motorista_placa, m.lat as motorista_lat, m.lng as motorista_lng
        FROM corridas c
        LEFT JOIN motoristas m ON c.motorista_id = m.id
        WHERE c.passageiro_id = $1 AND c.status != 'finalizada' AND c.status != 'cancelada'
@@ -270,15 +271,20 @@ exports.getOnlineDriversNearby = async (req, res) => {
 // ATUALIZAR LOCALIZAÇÃO EM TEMPO REAL
 // ======================
 exports.updateLocation = async (req, res) => {
-  const { corrida_id, userType, lat, lng } = req.body;
-  if (!corrida_id || !userType || lat == null || lng == null)
+  const { userId, userType, lat, lng } = req.body;
+  if (!userId || !userType || lat == null || lng == null)
     return res.status(400).json({ error: "Dados inválidos para atualizar localização" });
 
-  const fieldLat = userType === "passageiro" ? "passageiro_lat" : "motorista_lat";
-  const fieldLng = userType === "passageiro" ? "passageiro_lng" : "motorista_lng";
+  const tableFieldLat = userType === "passageiro" ? "passageiro_lat" : "motorista_lat";
+  const tableFieldLng = userType === "passageiro" ? "passageiro_lng" : "motorista_lng";
+  const idField = userType === "passageiro" ? "passageiro_id" : "motorista_id";
 
   try {
-    const result = await pool.query(`UPDATE corridas SET ${fieldLat}=$1, ${fieldLng}=$2 WHERE id=$3 RETURNING *`, [lat, lng, corrida_id]);
+    const result = await pool.query(
+      `UPDATE corridas SET ${tableFieldLat}=$1, ${tableFieldLng}=$2 WHERE ${idField}=$3 RETURNING *`,
+      [lat, lng, userId]
+    );
+
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
     return res.json({ message: "Localização atualizada", corrida: result.rows[0] });
   } catch (err) {
