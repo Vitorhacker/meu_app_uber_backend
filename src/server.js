@@ -16,19 +16,15 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 8082;
 
-// ==========================
 // Middlewares
-// ==========================
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
-// ==========================
 // Teste de conexão PostgreSQL
-// ==========================
 pool.connect()
   .then(client => {
-    console.log("✅ Conexão com PostgreSQL estabelecida com sucesso");
+    console.log("✅ Conexão com PostgreSQL estabelecida");
     client.release();
   })
   .catch(err => {
@@ -36,59 +32,24 @@ pool.connect()
     process.exit(1);
   });
 
-// ==========================
 // WebSocket
-// ==========================
-io.on("connection", (socket) => {
+io.on("connection", socket => {
   console.log("📡 Cliente conectado:", socket.id);
 });
-
-// Disponibiliza io para controllers
 app.set("io", io);
 
-// ==========================
 // Carregamento automático de rotas
-// ==========================
 const routesPath = path.join(__dirname, "routes");
-fs.readdirSync(routesPath).forEach((file) => {
+fs.readdirSync(routesPath).forEach(file => {
   if (file.endsWith("Routes.js")) {
     const route = require(path.join(routesPath, file));
     const name = file.replace("Routes.js", "").toLowerCase();
-    const basePath = `/api/${name}`;
-    app.use(basePath, route);
-    console.log(`📌 Rota carregada automaticamente: ${basePath}`);
+    app.use(`/api/${name}`, route);
+    console.log(`📌 Rota carregada: /api/${name}`);
   }
 });
 
-// ==========================
-// Registro manual de rotas críticas
-// ==========================
-try {
-  const passengerRoutes = require("./routes/passengerRoutes");
-  app.use("/api/passenger", passengerRoutes);
-  console.log("📌 Rota crítica carregada manualmente: /api/passenger");
-} catch (err) {
-  console.warn("⚠️ Não foi possível carregar passengerRoutes:", err.message);
-}
-
-try {
-  const webhookPagBankRoutes = require("./routes/webhookPagBankRoutes");
-  app.use("/api/webhooks/pagbank", webhookPagBankRoutes);
-  console.log("📌 Rota crítica carregada manualmente: /api/webhooks/pagbank");
-} catch (err) {
-  console.warn("⚠️ Não foi possível carregar webhookPagBankRoutes:", err.message);
-}
-
-try {
-  const corridaRoutes = require("./routes/corridaRoutes");
-  app.use("/api/corridas", corridaRoutes);
-} catch (err) {
-  console.warn("⚠️ Não foi possível carregar corridaRoutes:", err.message);
-}
-
-// ==========================
 // Rota de retorno PicPay
-// ==========================
 app.get("/app/checkout-return", (req, res) => {
   res.send(`
     <html>
@@ -103,18 +64,14 @@ app.get("/app/checkout-return", (req, res) => {
   `);
 });
 
-// ==========================
 // Middleware global de erros
-// ==========================
 app.use((err, req, res, next) => {
   console.error("❌ Erro capturado:", err);
   if (err.type === "validation") return res.status(400).json({ errors: err.errors });
   return res.status(500).json({ error: "Erro interno do servidor" });
 });
 
-// ==========================
 // Inicia servidor
-// ==========================
 server.listen(PORT, () => {
   console.log(`✅ Servidor rodando em http://localhost:${PORT}`);
 });
