@@ -1,35 +1,33 @@
 const express = require("express");
 const router = express.Router();
 const corridaController = require("../controllers/corridaController");
-const { verifyToken } = require("../middlewares/authMiddleware");
+const { verifyToken } = require("../middlewares/authMiddleware"); // seu middleware de autenticação
 
-// ======================
-// CRUD CORRIDA
-// ======================
+// Criar corrida
 router.post("/", verifyToken, corridaController.create);
-router.put("/:id/accept", verifyToken, corridaController.accept);
-router.put("/:id/start", verifyToken, corridaController.start);
-router.put("/:id/finish", verifyToken, corridaController.finish);
-router.put("/:id/cancel", verifyToken, corridaController.cancel);
 
-// ======================
+// Aceitar corrida (motorista precisa estar logado)
+router.post("/:id/accept", verifyToken, corridaController.accept);
+
+// Motorista chegou
+router.post("/:id/arrived", verifyToken, corridaController.driverArrived);
+
+// Iniciar corrida
+router.post("/:id/start", verifyToken, corridaController.start);
+
+// Atualizar localização
+router.post("/location", verifyToken, corridaController.updateLocation);
+
+// Finalizar corrida
+router.post("/:id/finish", verifyToken, corridaController.finish);
+
+// Cancelar corrida
+router.post("/:id/cancel", verifyToken, corridaController.cancel);
+
 // Buscar corrida atual do passageiro
-// ======================
-router.get("/passageiro/:passageiro_id/atual", verifyToken, corridaController.getCurrentRideByPassenger);
+router.get("/passenger/:passageiro_id/current", verifyToken, corridaController.getCurrentRideByPassenger);
 
-// ======================
-// Buscar corrida atual do motorista
-// ======================
-router.get("/motorista/:motorista_id/atual", verifyToken, corridaController.getCurrentRideByDriver);
-
-// ======================
-// Buscar motoristas online próximos
-// ======================
-router.get("/motoristas/online", verifyToken, corridaController.getOnlineDriversNearby);
-
-// ======================
-// Atualizar localização em tempo real
-// ======================
-router.put("/location/update", verifyToken, corridaController.updateLocation);
+// Motoristas online próximos
+router.get("/drivers/nearby", verifyToken, corridaController.getOnlineDriversNearby);
 
 module.exports = router;
