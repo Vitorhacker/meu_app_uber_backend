@@ -18,9 +18,6 @@ router.put("/:id/finish", verifyToken, corridaController.finish);
 // CANCELAR CORRIDA
 router.put("/:id/cancel", verifyToken, corridaController.cancel);
 
-// ATUALIZAR FORMA DE PAGAMENTO (passageiro pode mudar antes da corrida iniciar)
-router.put("/:id/payment", verifyToken, corridaController.updatePayment);
-
 // LISTAR CORRIDAS DE UM PASSAGEIRO
 router.get("/passenger/:passageiro_id", verifyToken, corridaController.getByPassenger);
 
