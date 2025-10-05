@@ -25,12 +25,12 @@ router.post("/:id/finish", verifyToken, corridaController.finish);
 router.post("/:id/cancel", verifyToken, corridaController.cancel);
 
 // Buscar corrida atual do passageiro
-router.get("/passenger/:passageiro_id/current", verifyToken, corridaController.getCurrentRideByPassenger);
+router.get("/passageiro/:passageiro_id/atual", verifyToken, corridaController.getCurrentRideByPassenger);
 
 // Buscar corrida atual do motorista
-router.get("/driver/:motorista_id/current", verifyToken, corridaController.getCurrentRideByDriver);
+router.get("/motorista/:motorista_id/atual", verifyToken, corridaController.getCurrentRideByDriver);
 
 // Motoristas online próximos
-router.get("/drivers/nearby", verifyToken, corridaController.getOnlineDriversNearby);
+router.get("/motoristas/online", verifyToken, corridaController.getOnlineDriversNearby);
 
 module.exports = router;
