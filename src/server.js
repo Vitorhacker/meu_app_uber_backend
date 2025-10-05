@@ -13,7 +13,7 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
-const PORT = process.env.PORT || 8081;
+const PORT = process.env.PORT || 8082;
 
 // ==========================
 // Middlewares

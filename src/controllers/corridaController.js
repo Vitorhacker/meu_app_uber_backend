@@ -19,17 +19,6 @@ exports.create = async (req, res) => {
   } = req.body;
 
   try {
-    // Validar pagamento
-    const pagamentoRes = await pool.query(
-      "SELECT * FROM pagamentos WHERE corrida_id IS NULL AND passageiro_id = $1 ORDER BY criado_em DESC LIMIT 1",
-      [passageiro_id]
-    );
-
-    const pagamento = pagamentoRes.rows[0];
-    if (!pagamento || (pagamento.status !== "pago" && pagamento.status !== "processando")) {
-      return res.status(400).json({ error: "Pagamento não confirmado ou inválido." });
-    }
-
     let distancia_total = 10; // default
     let duracao_total = 20;
 
@@ -74,10 +63,8 @@ exports.create = async (req, res) => {
     );
 
     const corrida = result.rows[0];
-
-    await pool.query("UPDATE pagamentos SET corrida_id = $1 WHERE id = $2", [corrida.id, pagamento.id]);
-
     corrida.motorista = null;
+
     return res.status(201).json(corrida);
   } catch (err) {
     console.error("Erro ao criar corrida:", err);
@@ -146,7 +133,7 @@ exports.finish = async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const { distancia, duracao, transaction_id } = req.body;
+    const { distancia, duracao } = req.body;
     const corrida_id = req.params.id;
 
     const corridaRes = await client.query(`SELECT * FROM corridas WHERE id = $1`, [corrida_id]);
@@ -167,25 +154,11 @@ exports.finish = async (req, res) => {
       now
     );
 
-    const { valorMotorista: valor_motorista, valorPlataforma: valor_plataforma } = calcularDivisao(valor_final);
-
     await client.query(
       `UPDATE corridas 
        SET status = 'finalizada', fim_em = NOW(), valor_final = $1, distancia = $2, duracao = $3
        WHERE id = $4`,
       [valor_final, distancia || corrida.distancia, duracao || corrida.duracao, corrida_id]
-    );
-
-    await client.query(
-      `INSERT INTO pagamentos 
-       (corrida_id, passageiro_id, motorista_id, valor_total, valor_motorista, valor_plataforma, forma_pagamento, transaction_id, data_pagamento)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())`,
-      [corrida_id, corrida.passageiro_id, corrida.motorista_id, valor_final, valor_motorista, valor_plataforma, corrida.forma_pagamento, transaction_id]
-    );
-
-    await client.query(
-      `UPDATE wallets SET saldo = saldo + $1 WHERE user_id = $2`,
-      [valor_motorista, corrida.motorista_id]
     );
 
     // ======================
@@ -216,9 +189,6 @@ exports.finish = async (req, res) => {
     return res.json({
       message: "Corrida finalizada com sucesso",
       corrida: { ...corrida, valor_final },
-      valor_motorista,
-      valor_plataforma,
-      transaction_id,
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -310,42 +280,10 @@ exports.updateLocation = async (req, res) => {
 exports.updatePayment = async (req, res) => {
   try {
     const corridaId = req.params.id;
-    const { novaFormaPagamento, passageiro_id } = req.body;
+    const { novaFormaPagamento } = req.body;
 
     if (!novaFormaPagamento) {
       return res.status(400).json({ error: "Nova forma de pagamento não fornecida." });
-    }
-
-    const corridaRes = await pool.query(`SELECT * FROM corridas WHERE id = $1`, [corridaId]);
-    if (corridaRes.rows.length === 0) {
-      return res.status(404).json({ error: "Corrida não encontrada." });
-    }
-
-    const corrida = corridaRes.rows[0];
-
-    if (corrida.status !== "procurando_motorista") {
-      return res.status(400).json({ error: "Não é possível alterar o pagamento após iniciar a corrida." });
-    }
-
-    if (corrida.passageiro_id !== passageiro_id) {
-      return res.status(403).json({ error: "Você não pode alterar o pagamento desta corrida." });
-    }
-
-    // Debitar saldo se for wallet
-    if (novaFormaPagamento === "wallet") {
-      const saldoRes = await pool.query("SELECT saldo FROM wallets WHERE user_id = $1", [passageiro_id]);
-      const saldo = saldoRes.rows[0]?.saldo || 0;
-
-      if (saldo < corrida.valor_estimado) {
-        return res.status(400).json({ error: "Saldo insuficiente na wallet." });
-      }
-
-      await pool.query("UPDATE wallets SET saldo = saldo - $1 WHERE user_id = $2", [corrida.valor_estimado, passageiro_id]);
-
-      if (corrida.motorista_id) {
-        const valorMotorista = parseFloat((corrida.valor_estimado * 0.8).toFixed(2));
-        await pool.query("UPDATE wallets SET saldo = saldo + $1 WHERE user_id = $2", [valorMotorista, corrida.motorista_id]);
-      }
     }
 
     await pool.query(`UPDATE corridas SET forma_pagamento = $1 WHERE id = $2 RETURNING *`, [novaFormaPagamento, corridaId]);
