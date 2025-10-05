@@ -3,28 +3,21 @@ const router = express.Router();
 const corridaController = require("../controllers/corridaController");
 const { verifyToken } = require("../middlewares/authMiddleware");
 
-// CRIAR CORRIDA
+// CRUD Corrida
 router.post("/", verifyToken, corridaController.create);
-
-// MOTORISTA ACEITA CORRIDA
 router.put("/:id/accept", verifyToken, corridaController.accept);
-
-// INICIAR CORRIDA
 router.put("/:id/start", verifyToken, corridaController.start);
-
-// FINALIZAR CORRIDA
 router.put("/:id/finish", verifyToken, corridaController.finish);
-
-// CANCELAR CORRIDA
 router.put("/:id/cancel", verifyToken, corridaController.cancel);
 
-// LISTAR CORRIDAS DE UM PASSAGEIRO
-router.get("/passenger/:passageiro_id", verifyToken, corridaController.getByPassenger);
+// Buscar corrida atual
+router.get("/passageiro/:passageiro_id/atual", verifyToken, corridaController.getCurrentRideByPassenger);
+router.get("/motorista/:motorista_id/atual", verifyToken, corridaController.getCurrentRideByDriver);
 
-// LISTAR CORRIDAS DE UM MOTORISTA
-router.get("/driver/:motorista_id", verifyToken, corridaController.getByDriver);
+// Buscar motoristas online próximos
+router.get("/motoristas/online", verifyToken, corridaController.getOnlineDriversNearby);
 
-// ATUALIZAR LOCALIZAÇÃO EM TEMPO REAL
+// Atualizar localização em tempo real
 router.put("/location/update", verifyToken, corridaController.updateLocation);
 
 module.exports = router;
