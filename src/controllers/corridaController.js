@@ -39,7 +39,7 @@ function emitRideUpdate(io, corrida_id, data) {
 }
 
 // ======================
-// CRIAR CORRIDA
+// CRIAR CORRIDA (com depuração detalhada)
 // ======================
 exports.create = async (req, res) => {
   const io = req.app.get("io");
@@ -49,8 +49,35 @@ exports.create = async (req, res) => {
     horario_partida, pagamento
   } = req.body;
 
-  if (!passageiro_id || !origem || !destino || !origemCoords || !destinoCoords || !category) {
-    return res.status(400).json({ error: "Campos obrigatórios ausentes" });
+  // ==========================
+  // Depuração de campos obrigatórios
+  // ==========================
+  const missingFields = [];
+
+  if (!passageiro_id) missingFields.push("passageiro_id não foi enviado");
+  if (!origem) missingFields.push("origem não foi enviada");
+  if (!origemCoords || origemCoords.latitude == null || origemCoords.longitude == null)
+    missingFields.push("origemCoords inválido ou incompleto");
+  if (!destino) missingFields.push("destino não foi enviado");
+  if (!destinoCoords || destinoCoords.latitude == null || destinoCoords.longitude == null)
+    missingFields.push("destinoCoords inválido ou incompleto");
+  if (!category) missingFields.push("category não foi enviado");
+
+  // Validação do horário
+  let partida = new Date();
+  if (horario_partida) {
+    partida = new Date(horario_partida);
+    if (isNaN(partida.getTime())) {
+      missingFields.push(`horario_partida inválido: ${horario_partida}`);
+    }
+  }
+
+  if (missingFields.length > 0) {
+    console.warn("Erro ao criar corrida - campos faltando ou inválidos:", missingFields);
+    return res.status(400).json({
+      error: "Campos obrigatórios ausentes ou inválidos",
+      details: missingFields
+    });
   }
 
   try {
@@ -77,7 +104,7 @@ exports.create = async (req, res) => {
         passageiroLocation?.latitude || origemCoords.latitude,
         passageiroLocation?.longitude || origemCoords.longitude,
         rota?.geojson || null,
-        horario_partida || new Date(),
+        partida,
         pagamento || "dinheiro"
       ]
     );
