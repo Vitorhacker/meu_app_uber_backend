@@ -1,66 +1,97 @@
+// controllers/corridaController.js
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 const axios = require("axios");
 
 const OSRM_BASE_URL = process.env.OSRM_URL || "http://router.project-osrm.org/route/v1/driving";
 
+// Calcula rota via OSRM
 async function calcularRota(origemCoords, destinoCoords, stops = []) {
   try {
     const coords = [`${origemCoords.longitude},${origemCoords.latitude}`];
-    stops.forEach(s => s.latitude != null && s.longitude != null && coords.push(`${s.longitude},${s.latitude}`));
+    stops.forEach(stop => {
+      if (stop.latitude != null && stop.longitude != null) {
+        coords.push(`${stop.longitude},${stop.latitude}`);
+      }
+    });
     coords.push(`${destinoCoords.longitude},${destinoCoords.latitude}`);
 
     const url = `${OSRM_BASE_URL}/${coords.join(";")}?overview=full&geometries=geojson&steps=true`;
     const res = await axios.get(url);
+
     if (res.data.routes?.length) {
       const route = res.data.routes[0];
       return { distancia: route.distance, duracao: route.duration, geojson: route.geometry, steps: route.legs };
     }
     return null;
   } catch (err) {
-    console.error("Erro ao calcular rota:", err.message);
-    return null;
+    console.error("❌ Erro ao calcular rota:", err.message);
+    throw new Error("Falha ao calcular rota");
   }
 }
 
+// Emitir evento via socket
 function emitCorridaUpdate(io, corrida_id, data) {
-  try { io.to(`corrida_${corrida_id}`).emit("corridaUpdate", data); } 
-  catch (err) { console.error("Erro ao emitir evento via socket:", err.message); }
+  try {
+    io.to(`corrida_${corrida_id}`).emit("corridaUpdate", data);
+  } catch (err) {
+    console.error("❌ Erro ao emitir evento via socket:", err.message);
+  }
 }
 
-// Criar corrida com token permanente
+// Criar corrida
 exports.create = async (req, res) => {
   const io = req.app.get("io");
+
   try {
+    console.log("🚀 Recebendo requisição para criar corrida:", req.body);
+
     const passageiro = req.user;
-    if (!passageiro?.id) return res.status(401).json({ error: "Passageiro não autenticado" });
+    if (!passageiro?.id) {
+      console.warn("⚠️ Passageiro não autenticado");
+      return res.status(401).json({ error: "Passageiro não autenticado" });
+    }
 
     let { origem, destino, origemCoords, destinoCoords, category, stops, valor_estimado, horario_partida, pagamento } = req.body;
 
+    // Corrige coords
     const origemCoordsFix = { latitude: origemCoords?.latitude ?? origemCoords?.lat, longitude: origemCoords?.longitude ?? origemCoords?.lng };
     const destinoCoordsFix = { latitude: destinoCoords?.latitude ?? destinoCoords?.lat, longitude: destinoCoords?.longitude ?? destinoCoords?.lng };
 
+    console.log("📍 Coordenadas corrigidas:", { origemCoordsFix, destinoCoordsFix });
+
+    // Validação de campos obrigatórios
     const missing = [];
     if (!origem) missing.push("origem");
     if (!origemCoordsFix.latitude || !origemCoordsFix.longitude) missing.push("origemCoords");
     if (!destino) missing.push("destino");
     if (!destinoCoordsFix.latitude || !destinoCoordsFix.longitude) missing.push("destinoCoords");
     if (!category) missing.push("category");
-    if (missing.length) return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
+    if (missing.length) {
+      console.warn("⚠️ Campos obrigatórios ausentes:", missing);
+      return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
+    }
 
+    // Stops válidas
     stops = Array.isArray(stops) ? stops.filter(s => s.latitude != null && s.longitude != null) : [];
 
+    // Horário de partida
     let horarioPartidaDate = new Date();
     if (horario_partida) {
       const parsed = new Date(horario_partida);
       if (!isNaN(parsed)) horarioPartidaDate = parsed;
     }
+    console.log("🕒 Horário de partida:", horarioPartidaDate);
 
+    // Calcula rota
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, stops);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
     const valor_final = valor_estimado || calcularValor(category, distancia_km, duracao_min, stops.length, new Date());
 
+    console.log("🛣️ Rota calculada:", { distancia_km, duracao_min, valor_final });
+
+    // Inserir no banco
     const result = await pool.query(
       `INSERT INTO corridas
         (passageiro_id, origem, destino, origem_lat, origem_lng,
@@ -83,11 +114,14 @@ exports.create = async (req, res) => {
     );
 
     const corrida = result.rows[0];
+    console.log("✅ Corrida inserida no banco:", corrida.id);
+
     emitCorridaUpdate(io, corrida.id, { status: 'criada', corrida });
 
     return res.status(201).json({ message: "Corrida criada com sucesso", corrida_id: corrida.id, corrida });
+
   } catch (err) {
-    console.error("Erro ao criar corrida:", err);
+    console.error("❌ Erro ao criar corrida:", err);
     return res.status(500).json({ error: "Erro ao criar corrida", details: err.message });
   }
 };
