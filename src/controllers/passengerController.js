@@ -59,7 +59,7 @@ const createPassenger = async (req, res) => {
     const passenger = passengerResult.rows[0];
 
     // 7️⃣ Gera token JWT permanente (sem expiração)
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET);
+    const token = jwt.sign({ userId: user.id, role: "passageiro" }, JWT_SECRET);
 
     // 8️⃣ Armazena token permanente no banco para autenticação futura
     await pool.query(
@@ -67,10 +67,10 @@ const createPassenger = async (req, res) => {
       [token, user.id]
     );
 
-    // 9️⃣ Retorna sucesso com token
+    // 9️⃣ Retorna sucesso com token permanente
     return res.status(201).json({
       message: "Conta criada com sucesso!",
-      token,
+      token,          // Token permanente para usar no AuthContext
       userId: user.id,
       passenger
     });
@@ -81,4 +81,9 @@ const createPassenger = async (req, res) => {
   }
 };
 
-module.exports = { createPassenger };
+// ================================
+// Exporta funções
+// ================================
+module.exports = {
+  createPassenger,
+};

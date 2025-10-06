@@ -1,14 +1,11 @@
-// src/middlewares/authMiddleware.js
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersegreto123";
+const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 
 // Middleware para verificar token (JWT ou token permanente)
 async function verifyToken(req, res, next) {
   const tokenHeader = req.headers["authorization"];
-  console.log("🔹 verifyToken - tokenHeader:", tokenHeader);
-
   if (!tokenHeader) {
     return res.status(403).json({ error: "Token não fornecido" });
   }
@@ -16,13 +13,13 @@ async function verifyToken(req, res, next) {
   const token = tokenHeader.replace("Bearer ", "").trim();
 
   try {
-    // 1️⃣ Verifica como JWT
+    // 1️⃣ Tenta verificar como JWT
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = { id: decoded.userId, role: "passageiro" }; // JWT sempre passageiro
+      req.user = decoded; // payload do JWT
       return next();
-    } catch {
-      // Se não for JWT, tenta token permanente
+    } catch (err) {
+      // Não é JWT válido, tenta token permanente
     }
 
     // 2️⃣ Verifica token permanente no banco
@@ -41,16 +38,17 @@ async function verifyToken(req, res, next) {
       nome: user.nome,
       email: user.email,
       role: user.role,
-      token_permanente: user.token_permanente,
+      token_permanente: user.token_permanente
     };
 
     next();
   } catch (err) {
-    console.error("❌ verifyToken - Erro interno:", err.message);
+    console.error("Erro interno auth:", err.message);
     return res.status(500).json({ error: "Erro ao autenticar usuário", details: err.message });
   }
 }
 
+// Middleware para verificar role do usuário
 function requireRole(role) {
   return (req, res, next) => {
     if (!req.user || req.user.role !== role) {
