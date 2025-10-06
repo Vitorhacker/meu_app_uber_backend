@@ -49,6 +49,11 @@ fs.readdirSync(routesPath).forEach(file => {
   }
 });
 
+// 🔹 Alias manual para /api/corridas
+const corridaRoute = require("./routes/corridaRoutes"); // certifique que o arquivo existe
+app.use("/api/corridas", corridaRoute); 
+console.log("📌 Alias manual carregado: /api/corridas");
+
 // Rota de retorno PicPay
 app.get("/app/checkout-return", (req, res) => {
   res.send(`
