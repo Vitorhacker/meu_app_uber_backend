@@ -39,18 +39,22 @@ function emitCorridaUpdate(io, corrida_id, data) {
   }
 }
 
-// Criar corrida
+// ======================================================
+// 🟢 CRIAR CORRIDA
+// ======================================================
 exports.create = async (req, res) => {
   const io = req.app.get("io");
 
   try {
     console.log("🚀 Recebendo requisição para criar corrida:", req.body);
 
-    const passageiro = req.user;
-    if (!passageiro?.id) {
-      console.warn("⚠️ Passageiro não autenticado");
-      return res.status(401).json({ error: "Passageiro não autenticado" });
-    }
+    const user = req.user;
+    if (!user?.id) return res.status(401).json({ error: "Usuário não autenticado" });
+
+    // Busca passageiro vinculado ao usuário
+    const passageiroResult = await pool.query("SELECT * FROM passageiros WHERE user_id=$1", [user.id]);
+    if (!passageiroResult.rows.length) return res.status(400).json({ error: "Passageiro não encontrado" });
+    const passageiro = passageiroResult.rows[0];
 
     let { origem, destino, origemCoords, destinoCoords, category, stops, valor_estimado, horario_partida, pagamento } = req.body;
 
@@ -67,10 +71,7 @@ exports.create = async (req, res) => {
     if (!destino) missing.push("destino");
     if (!destinoCoordsFix.latitude || !destinoCoordsFix.longitude) missing.push("destinoCoords");
     if (!category) missing.push("category");
-    if (missing.length) {
-      console.warn("⚠️ Campos obrigatórios ausentes:", missing);
-      return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
-    }
+    if (missing.length) return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
 
     // Stops válidas
     stops = Array.isArray(stops) ? stops.filter(s => s.latitude != null && s.longitude != null) : [];
@@ -102,7 +103,8 @@ exports.create = async (req, res) => {
                $9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
-        passageiro.id, origem, destino,
+        passageiro.id, // <-- ID correto do passageiro
+        origem, destino,
         origemCoordsFix.latitude, origemCoordsFix.longitude,
         destinoCoordsFix.latitude, destinoCoordsFix.longitude,
         category, JSON.stringify(stops),
@@ -133,10 +135,7 @@ exports.getById = async (req, res) => {
   try {
     console.log("🔍 Buscando corrida ID:", req.params.id);
     const result = await pool.query(`SELECT * FROM corridas WHERE id=$1`, [req.params.id]);
-    if (!result.rows.length) {
-      console.warn("⚠️ Corrida não encontrada:", req.params.id);
-      return res.status(404).json({ error: "Corrida não encontrada" });
-    }
+    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ Erro ao buscar corrida:", err);
@@ -152,10 +151,7 @@ exports.findDriver = async (req, res) => {
   try {
     console.log("🚀 Iniciando busca de motorista para corrida:", req.params.id);
     const result = await pool.query(`UPDATE corridas SET status='procurando_motorista' WHERE id=$1 RETURNING *`, [req.params.id]);
-    if (!result.rows.length) {
-      console.warn("⚠️ Corrida não encontrada para buscar motorista:", req.params.id);
-      return res.status(404).json({ error: "Corrida não encontrada" });
-    }
+    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, message: "Procurando motorista..." });
