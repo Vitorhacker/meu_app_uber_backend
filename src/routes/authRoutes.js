@@ -10,10 +10,9 @@ router.post("/register", authController.registerPassenger);
 router.post("/login", authController.loginPassenger);
 
 // ======================
-// PERFIL, REFRESH e LOGOUT
+// PERFIL e LOGOUT
 // ======================
 router.get("/me", verifyToken, authController.getProfile);
-router.post("/refresh", verifyToken, authController.refreshToken);
 router.post("/logout", verifyToken, authController.logout);
 
 module.exports = router;

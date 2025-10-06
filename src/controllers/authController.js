@@ -1,45 +1,43 @@
+// controllers/authController.js
 const pool = require("../db");
+const bcrypt = require("bcrypt");
 
 // ========================================
 // PASSAGEIRO - Registro
 // ========================================
 exports.registerPassenger = async (req, res) => {
   const { nome, cpf, telefone, email, senha } = req.body;
-
   if (!nome || !cpf || !telefone || !email || !senha) {
     return res.status(400).json({ error: "Todos os campos são obrigatórios" });
   }
 
   try {
-    // Verifica se já existe usuário com o email ou CPF
-    const exists = await pool.query(
-      "SELECT id FROM usuarios WHERE email=$1 OR cpf=$2",
-      [email, cpf]
-    );
-    if (exists.rows.length > 0) {
-      return res.status(400).json({ error: "Email ou CPF já cadastrado" });
+    // Verifica se o email já existe
+    const existing = await pool.query("SELECT id FROM usuarios WHERE email=$1", [email]);
+    if (existing.rows.length) {
+      return res.status(400).json({ error: "E-mail já cadastrado" });
     }
 
-    // Cria usuário
+    // Hash da senha
+    const hashedSenha = await bcrypt.hash(senha, 10);
+
+    // Cria usuário na tabela usuarios
     const result = await pool.query(
       `INSERT INTO usuarios (nome, cpf, telefone, email, senha, role, created_at)
        VALUES ($1, $2, $3, $4, $5, 'passageiro', NOW())
        RETURNING *`,
-      [nome, cpf, telefone, email, senha]
+      [nome, cpf, telefone, email, hashedSenha]
     );
 
     const user = result.rows[0];
 
-    // Gera token permanente
-    const token = `token-${user.id}`;
-    await pool.query(
-      "UPDATE usuarios SET token_permanente=$1 WHERE id=$2",
-      [token, user.id]
-    );
+    // Gera token permanente único
+    const permanentToken = `token-${user.id}`;
+    await pool.query("UPDATE usuarios SET token_permanente=$1 WHERE id=$2", [permanentToken, user.id]);
 
     return res.status(201).json({
-      user: { id: user.id, nome: user.nome, telefone: user.telefone },
-      token,
+      userId: user.id,
+      token: permanentToken
     });
   } catch (err) {
     console.error("Erro ao registrar passageiro:", err.message);
@@ -54,7 +52,7 @@ exports.loginPassenger = async (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
-    return res.status(400).json({ error: "Email e senha são obrigatórios" });
+    return res.status(400).json({ error: "E-mail e senha são obrigatórios" });
   }
 
   try {
@@ -63,29 +61,26 @@ exports.loginPassenger = async (req, res) => {
       [email]
     );
 
-    if (result.rows.length === 0) {
+    if (!result.rows.length) {
       return res.status(404).json({ error: "Passageiro não encontrado" });
     }
 
     const user = result.rows[0];
 
-    if (user.senha !== senha) {
-      return res.status(401).json({ error: "Senha incorreta" });
-    }
+    // Compara hash da senha
+    const valid = await bcrypt.compare(senha, user.senha);
+    if (!valid) return res.status(401).json({ error: "Senha incorreta" });
 
-    // Retorna token permanente
+    // Retorna apenas token permanente
     let token = user.token_permanente;
     if (!token) {
       token = `token-${user.id}`;
-      await pool.query(
-        "UPDATE usuarios SET token_permanente=$1 WHERE id=$2",
-        [token, user.id]
-      );
+      await pool.query("UPDATE usuarios SET token_permanente=$1 WHERE id=$2", [token, user.id]);
     }
 
     return res.json({
       user: { id: user.id, nome: user.nome, telefone: user.telefone },
-      token,
+      token
     });
   } catch (err) {
     console.error("Erro no login passageiro:", err.message);
@@ -94,49 +89,38 @@ exports.loginPassenger = async (req, res) => {
 };
 
 // ========================================
-// PERFIL, REFRESH e LOGOUT
+// PERFIL
 // ========================================
 exports.getProfile = async (req, res) => {
-  const userId = req.userId; // setado pelo middleware verifyToken
   try {
+    const user = req.user;
+    if (!user?.id) return res.status(401).json({ error: "Usuário não autenticado" });
+
     const result = await pool.query(
-      "SELECT id, nome, email, telefone, role FROM usuarios WHERE id=$1",
-      [userId]
+      "SELECT id, nome, telefone, email, role FROM usuarios WHERE id=$1",
+      [user.id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
-    }
+    if (!result.rows.length) return res.status(404).json({ error: "Usuário não encontrado" });
 
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao obter perfil:", err.message);
-    return res.status(500).json({ error: "Erro ao obter perfil" });
+    console.error("Erro ao buscar perfil:", err.message);
+    return res.status(500).json({ error: "Erro ao buscar perfil" });
   }
 };
 
-exports.refreshToken = async (req, res) => {
-  const userId = req.userId;
-  try {
-    const result = await pool.query(
-      "SELECT token_permanente FROM usuarios WHERE id=$1",
-      [userId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
-    }
-
-    return res.json({ token: result.rows[0].token_permanente });
-  } catch (err) {
-    console.error("Erro ao atualizar token:", err.message);
-    return res.status(500).json({ error: "Erro ao atualizar token" });
-  }
-};
-
+// ========================================
+// LOGOUT
+// ========================================
 exports.logout = async (req, res) => {
-  const userId = req.userId;
   try {
-    await pool.query("UPDATE usuarios SET token_permanente=NULL WHERE id=$1", [userId]);
+    const user = req.user;
+    if (!user?.id) return res.status(401).json({ error: "Usuário não autenticado" });
+
+    // Opcional: invalidar token permanente
+    await pool.query("UPDATE usuarios SET token_permanente=NULL WHERE id=$1", [user.id]);
+
     return res.json({ message: "Logout realizado com sucesso" });
   } catch (err) {
     console.error("Erro no logout:", err.message);
