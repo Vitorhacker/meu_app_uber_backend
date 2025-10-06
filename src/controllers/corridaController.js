@@ -1,107 +1,76 @@
-// controllers/corridaController.js
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 const axios = require("axios");
 
 const OSRM_BASE_URL = process.env.OSRM_URL || "http://router.project-osrm.org/route/v1/driving";
 
-// ======================================================
-// 🔧 FUNÇÃO AUXILIAR: CALCULAR ROTA VIA OSRM
-// ======================================================
+// Calcula rota via OSRM
 async function calcularRota(origemCoords, destinoCoords, stops = []) {
   try {
     const coords = [`${origemCoords.longitude},${origemCoords.latitude}`];
-
-    if (Array.isArray(stops)) {
-      stops.forEach(stop => {
-        if (stop.latitude != null && stop.longitude != null) {
-          coords.push(`${stop.longitude},${stop.latitude}`);
-        }
-      });
-    }
-
+    stops.forEach(stop => {
+      if (stop.latitude != null && stop.longitude != null) {
+        coords.push(`${stop.longitude},${stop.latitude}`);
+      }
+    });
     coords.push(`${destinoCoords.longitude},${destinoCoords.latitude}`);
 
     const url = `${OSRM_BASE_URL}/${coords.join(";")}?overview=full&geometries=geojson&steps=true`;
-    console.log("🌐 Requisição OSRM:", url);
-
     const res = await axios.get(url);
 
     if (res.data.routes?.length) {
       const route = res.data.routes[0];
-      console.log("🗺 Rota OSRM calculada:", { distance: route.distance, duration: route.duration });
-      return {
-        distancia: route.distance,
-        duracao: route.duration,
-        geojson: route.geometry,
-        steps: route.legs
-      };
-    } else {
-      console.warn("⚠️ Nenhuma rota retornada pelo OSRM");
-      return null;
+      return { distancia: route.distance, duracao: route.duration, geojson: route.geometry, steps: route.legs };
     }
+    return null;
   } catch (err) {
     console.error("❌ Erro ao calcular rota:", err.message);
     return null;
   }
 }
 
-// ======================================================
-// 🔧 FUNÇÃO AUXILIAR: EMITIR EVENTO VIA SOCKET
-// ======================================================
+// Emitir evento via socket
 function emitCorridaUpdate(io, corrida_id, data) {
   try {
     io.to(`corrida_${corrida_id}`).emit("corridaUpdate", data);
-    console.log(`📡 Evento emitido para corrida_${corrida_id}:`, data.status || "update");
   } catch (err) {
     console.error("❌ Erro ao emitir evento via socket:", err.message);
   }
 }
 
-// ======================================================
-// 🚗 CRIAR CORRIDA (compatível com token permanente)
-// ======================================================
+// Criar corrida
 exports.create = async (req, res) => {
   const io = req.app.get("io");
   try {
-    console.log("📥 Requisição create corrida:", req.body);
-
     const passageiro = req.user;
-    if (!passageiro?.id) {
-      console.error("❌ Passageiro não autenticado");
-      return res.status(401).json({ error: "Passageiro não autenticado" });
-    }
+    if (!passageiro?.id) return res.status(401).json({ error: "Passageiro não autenticado" });
 
     let { origem, destino, origemCoords, destinoCoords, category, stops, valor_estimado, horario_partida, pagamento } = req.body;
 
-    // Corrige coords caso venham como {lat,lng} ou {latitude,longitude}
+    // Corrige coords
     const origemCoordsFix = { latitude: origemCoords?.latitude ?? origemCoords?.lat, longitude: origemCoords?.longitude ?? origemCoords?.lng };
     const destinoCoordsFix = { latitude: destinoCoords?.latitude ?? destinoCoords?.lat, longitude: destinoCoords?.longitude ?? destinoCoords?.lng };
 
-    // Validação básica
+    // Validação
     const missing = [];
     if (!origem) missing.push("origem");
     if (!origemCoordsFix.latitude || !origemCoordsFix.longitude) missing.push("origemCoords");
     if (!destino) missing.push("destino");
     if (!destinoCoordsFix.latitude || !destinoCoordsFix.longitude) missing.push("destinoCoords");
     if (!category) missing.push("category");
+    if (missing.length) return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
 
-    if (missing.length) {
-      console.error("❌ Campos obrigatórios ausentes:", missing);
-      return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
-    }
+    // Stops válidas
+    stops = Array.isArray(stops) ? stops.filter(s => s.latitude != null && s.longitude != null) : [];
 
-    // Valida stops
-    if (!Array.isArray(stops)) stops = [];
-    stops = stops.filter(s => s.latitude != null && s.longitude != null);
-
-    // Valida horario_partida
+    // Horário
     let horarioPartidaDate = new Date();
     if (horario_partida) {
       const parsed = new Date(horario_partida);
       if (!isNaN(parsed)) horarioPartidaDate = parsed;
     }
 
+    // Calcula rota
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, stops);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
@@ -129,17 +98,14 @@ exports.create = async (req, res) => {
     );
 
     const corrida = result.rows[0];
-    console.log("✅ Corrida criada no banco:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: 'criada', corrida });
 
     return res.status(201).json({ message: "Corrida criada com sucesso", corrida_id: corrida.id, corrida });
-
   } catch (err) {
     console.error("❌ Erro ao criar corrida:", err);
     return res.status(500).json({ error: "Erro ao criar corrida", details: err.message });
   }
 };
-
 // ======================================================
 // 🧭 BUSCAR CORRIDA PELO ID
 // ======================================================
