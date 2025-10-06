@@ -1,30 +1,34 @@
 const express = require("express");
 const router = express.Router();
 const corridaController = require("../controllers/corridaController");
-const { verifyToken } = require("../middlewares/authMiddleware");
+const { verifyToken, requireRole } = require("../middlewares/authMiddleware");
 
-// Etapa 1 - Criar corrida
-router.post("/", verifyToken, corridaController.create);
+// ======================================================
+// Rotas de Corrida - Passageiro & Motorista
+// ======================================================
 
-// Etapa 2 - Buscar corrida pelo ID
+// 🔹 Etapa 1 - Criar corrida (passageiro)
+router.post("/", verifyToken, requireRole("passageiro"), corridaController.create);
+
+// 🔹 Etapa 2 - Buscar corrida pelo ID (passageiro/motorista)
 router.get("/:id", verifyToken, corridaController.getById);
 
-// Etapa 3 - Procurar motorista
-router.post("/:id/findDriver", verifyToken, corridaController.findDriver);
+// 🔹 Etapa 3 - Procurar motorista (passageiro)
+router.post("/:id/findDriver", verifyToken, requireRole("passageiro"), corridaController.findDriver);
 
-// Motorista aceita corrida
-router.post("/:id/accept", verifyToken, corridaController.accept);
+// 🔹 Motorista aceita corrida
+router.post("/:id/accept", verifyToken, requireRole("motorista"), corridaController.accept);
 
-// Motorista chegou
-router.post("/:id/arrived", verifyToken, corridaController.driverArrived);
+// 🔹 Motorista chegou ao local de partida
+router.post("/:id/driverArrived", verifyToken, requireRole("motorista"), corridaController.driverArrived);
 
-// Iniciar corrida
-router.post("/:id/start", verifyToken, corridaController.start);
+// 🔹 Iniciar corrida
+router.post("/:id/start", verifyToken, requireRole("motorista"), corridaController.start);
 
-// Finalizar corrida
+// 🔹 Finalizar corrida
 router.post("/:id/finish", verifyToken, corridaController.finish);
 
-// Cancelar corrida
+// 🔹 Cancelar corrida
 router.post("/:id/cancel", verifyToken, corridaController.cancel);
 
 module.exports = router;
