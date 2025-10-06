@@ -10,12 +10,6 @@ router.post("/register", authController.registerPassenger);
 router.post("/login", authController.loginPassenger);
 
 // ======================
-// MOTORISTA
-// ======================
-router.post("/registerdriver", authController.registerDriver);
-router.post("/logindriver", authController.loginDriver);
-
-// ======================
 // PERFIL, REFRESH e LOGOUT
 // ======================
 router.get("/me", verifyToken, authController.getProfile);

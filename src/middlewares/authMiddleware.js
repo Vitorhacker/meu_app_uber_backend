@@ -25,13 +25,11 @@ async function verifyToken(req, res, next) {
       // Não é JWT válido, tenta token permanente
     }
 
-    // 2️⃣ Verifica token permanente no banco (usuarios)
+    // 2️⃣ Verifica token permanente no banco (apenas usuários/passageiros)
     const result = await pool.query(
-      `SELECT u.id, u.nome, u.email, u.role, u.token_permanente,
-              p.id AS passageiro_id
-       FROM usuarios u
-       LEFT JOIN passageiros p ON p.user_id = u.id
-       WHERE u.token_permanente = $1`,
+      `SELECT id, nome, email, role, telefone, token_permanente
+       FROM usuarios
+       WHERE token_permanente = $1`,
       [token]
     );
 
@@ -45,8 +43,8 @@ async function verifyToken(req, res, next) {
       nome: user.nome,
       email: user.email,
       role: user.role,
+      telefone: user.telefone,
       token_permanente: user.token_permanente,
-      passageiro_id: user.passageiro_id || null
     };
 
     next();
