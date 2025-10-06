@@ -1,9 +1,12 @@
+// middlewares/authMiddleware.js
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 
-// Middleware para verificar token (JWT ou token permanente)
+// ======================================================
+// Middleware: Verifica token (JWT ou token permanente)
+// ======================================================
 async function verifyToken(req, res, next) {
   const tokenHeader = req.headers["authorization"];
   if (!tokenHeader) {
@@ -13,18 +16,22 @@ async function verifyToken(req, res, next) {
   const token = tokenHeader.replace("Bearer ", "").trim();
 
   try {
-    // 1️⃣ Tenta verificar como JWT
+    // 1️⃣ Tenta verificar como JWT normal
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded; // payload do JWT
+      req.user = decoded;
       return next();
     } catch (err) {
       // Não é JWT válido, tenta token permanente
     }
 
-    // 2️⃣ Verifica token permanente no banco
+    // 2️⃣ Verifica token permanente no banco (usuarios)
     const result = await pool.query(
-      "SELECT id, nome, email, role, token_permanente FROM usuarios WHERE token_permanente=$1",
+      `SELECT u.id, u.nome, u.email, u.role, u.token_permanente,
+              p.id AS passageiro_id
+       FROM usuarios u
+       LEFT JOIN passageiros p ON p.user_id = u.id
+       WHERE u.token_permanente = $1`,
       [token]
     );
 
@@ -38,7 +45,8 @@ async function verifyToken(req, res, next) {
       nome: user.nome,
       email: user.email,
       role: user.role,
-      token_permanente: user.token_permanente
+      token_permanente: user.token_permanente,
+      passageiro_id: user.passageiro_id || null
     };
 
     next();
@@ -48,7 +56,9 @@ async function verifyToken(req, res, next) {
   }
 }
 
-// Middleware para verificar role do usuário
+// ======================================================
+// Middleware: Verifica role do usuário
+// ======================================================
 function requireRole(role) {
   return (req, res, next) => {
     if (!req.user || req.user.role !== role) {

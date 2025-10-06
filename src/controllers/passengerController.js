@@ -1,13 +1,13 @@
 // controllers/passengerController.js
 const pool = require("../db");
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 
-// ================================
-// Criar Passageiro com token permanente
-// ================================
+// ======================================================
+// Criar passageiro com token permanente
+// ======================================================
 const createPassenger = async (req, res) => {
   try {
     const { nome, email, senha, cpf, telefone } = req.body;
@@ -58,14 +58,12 @@ const createPassenger = async (req, res) => {
     );
     const passenger = passengerResult.rows[0];
 
-    // 7️⃣ Gera token JWT permanente (sem expiração)
+    // 7️⃣ Gera token JWT permanente
     const token = jwt.sign({ userId: user.id, role: "passageiro" }, JWT_SECRET);
 
-    // 8️⃣ Armazena token permanente no banco para autenticação futura
-    await pool.query(
-      "UPDATE usuarios SET token_permanente=$1 WHERE id=$2",
-      [token, user.id]
-    );
+    // 8️⃣ Armazena token permanente no banco (usuarios e passageiros)
+    await pool.query("UPDATE usuarios SET token_permanente=$1 WHERE id=$2", [token, user.id]);
+    await pool.query("UPDATE passageiros SET token_permanente=$1 WHERE user_id=$2", [token, user.id]);
 
     // 9️⃣ Retorna sucesso com token permanente
     return res.status(201).json({
@@ -76,14 +74,52 @@ const createPassenger = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🚨 Erro ao criar passageiro:", err);
+    console.error("Erro ao criar passageiro:", err);
     return res.status(500).json({ error: "Não foi possível criar passageiro. Tente novamente mais tarde." });
   }
 };
 
-// ================================
-// Exporta funções
-// ================================
-module.exports = {
-  createPassenger,
+// ======================================================
+// Login passageiro usando token permanente
+// ======================================================
+const loginPassenger = async (req, res) => {
+  try {
+    const { email, senha } = req.body;
+
+    const result = await pool.query(
+      "SELECT * FROM usuarios WHERE email=$1 AND role='passageiro'",
+      [email]
+    );
+
+    if (!result.rows.length) return res.status(404).json({ error: "Passageiro não encontrado" });
+
+    const user = result.rows[0];
+    const senhaOk = await bcrypt.compare(senha, user.senha);
+    if (!senhaOk) return res.status(401).json({ error: "Senha incorreta" });
+
+    // Busca token permanente
+    let token = user.token_permanente;
+    if (!token) {
+      token = jwt.sign({ userId: user.id, role: "passageiro" }, JWT_SECRET);
+      await pool.query("UPDATE usuarios SET token_permanente=$1 WHERE id=$2", [token, user.id]);
+      await pool.query("UPDATE passageiros SET token_permanente=$1 WHERE user_id=$2", [token, user.id]);
+    }
+
+    return res.json({
+      user: {
+        id: user.id,
+        nome: user.nome,
+        cpf: user.cpf,
+        telefone: user.telefone,
+        email: user.email,
+        role: user.role
+      },
+      token
+    });
+  } catch (err) {
+    console.error("Erro no login passageiro:", err.message);
+    return res.status(500).json({ error: "Erro ao fazer login" });
+  }
 };
+
+module.exports = { createPassenger, loginPassenger };
