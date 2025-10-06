@@ -23,6 +23,8 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
     coords.push(`${destinoCoords.longitude},${destinoCoords.latitude}`);
 
     const url = `${OSRM_BASE_URL}/${coords.join(";")}?overview=full&geometries=geojson&steps=true`;
+    console.log("🌐 Requisição OSRM:", url);
+
     const res = await axios.get(url);
 
     if (res.data.routes?.length) {
@@ -57,7 +59,7 @@ function emitCorridaUpdate(io, corrida_id, data) {
 }
 
 // ======================================================
-// 🚗 CRIAR CORRIDA
+// 🚗 CRIAR CORRIDA (compatível com token permanente)
 // ======================================================
 exports.create = async (req, res) => {
   const io = req.app.get("io");
@@ -66,6 +68,7 @@ exports.create = async (req, res) => {
 
     const passageiro = req.user;
     if (!passageiro?.id) {
+      console.error("❌ Passageiro não autenticado");
       return res.status(401).json({ error: "Passageiro não autenticado" });
     }
 
@@ -84,6 +87,7 @@ exports.create = async (req, res) => {
     if (!category) missing.push("category");
 
     if (missing.length) {
+      console.error("❌ Campos obrigatórios ausentes:", missing);
       return res.status(400).json({ error: "Campos obrigatórios ausentes", details: missing });
     }
 
@@ -125,12 +129,13 @@ exports.create = async (req, res) => {
     );
 
     const corrida = result.rows[0];
+    console.log("✅ Corrida criada no banco:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: 'criada', corrida });
 
     return res.status(201).json({ message: "Corrida criada com sucesso", corrida_id: corrida.id, corrida });
 
   } catch (err) {
-    console.error("❌ Erro ao criar corrida:", err.message);
+    console.error("❌ Erro ao criar corrida:", err);
     return res.status(500).json({ error: "Erro ao criar corrida", details: err.message });
   }
 };
@@ -140,11 +145,15 @@ exports.create = async (req, res) => {
 // ======================================================
 exports.getById = async (req, res) => {
   try {
+    console.log("🔍 Buscando corrida ID:", req.params.id);
     const result = await pool.query(`SELECT * FROM corridas WHERE id=$1`, [req.params.id]);
-    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+    if (!result.rows.length) {
+      console.warn("⚠️ Corrida não encontrada:", req.params.id);
+      return res.status(404).json({ error: "Corrida não encontrada" });
+    }
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao buscar corrida:", err.message);
+    console.error("❌ Erro ao buscar corrida:", err);
     return res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
   }
 };
@@ -155,14 +164,18 @@ exports.getById = async (req, res) => {
 exports.findDriver = async (req, res) => {
   const io = req.app.get("io");
   try {
+    console.log("🚀 Iniciando busca de motorista para corrida:", req.params.id);
     const result = await pool.query(`UPDATE corridas SET status='procurando_motorista' WHERE id=$1 RETURNING *`, [req.params.id]);
-    if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+    if (!result.rows.length) {
+      console.warn("⚠️ Corrida não encontrada para buscar motorista:", req.params.id);
+      return res.status(404).json({ error: "Corrida não encontrada" });
+    }
 
     const corrida = result.rows[0];
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, message: "Procurando motorista..." });
     return res.json({ message: "Busca por motorista iniciada", corrida });
   } catch (err) {
-    console.error("❌ Erro ao iniciar busca de motorista:", err.message);
+    console.error("❌ Erro ao iniciar busca de motorista:", err);
     return res.status(500).json({ error: "Erro ao iniciar busca", details: err.message });
   }
 };
@@ -174,6 +187,8 @@ exports.accept = async (req, res) => {
   const io = req.app.get("io");
   const { motorista_id, motoristaLocation } = req.body;
   try {
+    console.log("✅ Motorista aceitando corrida:", req.params.id, motorista_id);
+
     if (!motorista_id || !motoristaLocation?.latitude || !motoristaLocation?.longitude)
       return res.status(400).json({ error: "Dados do motorista inválidos" });
 
@@ -188,7 +203,7 @@ exports.accept = async (req, res) => {
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, corrida });
     return res.json(corrida);
   } catch (err) {
-    console.error("❌ Erro ao aceitar corrida:", err.message);
+    console.error("❌ Erro ao aceitar corrida:", err);
     return res.status(500).json({ error: "Erro ao aceitar corrida", details: err.message });
   }
 };
@@ -199,13 +214,14 @@ exports.accept = async (req, res) => {
 exports.driverArrived = async (req, res) => {
   const io = req.app.get("io");
   try {
+    console.log("🛑 Motorista chegou na corrida:", req.params.id);
     const result = await pool.query(`UPDATE corridas SET status='motorista_chegou', chegou_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     emitCorridaUpdate(io, req.params.id, { status: 'motorista_chegou', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao atualizar chegada:", err.message);
+    console.error("❌ Erro ao atualizar chegada:", err);
     return res.status(500).json({ error: "Erro ao atualizar chegada", details: err.message });
   }
 };
@@ -216,13 +232,14 @@ exports.driverArrived = async (req, res) => {
 exports.start = async (req, res) => {
   const io = req.app.get("io");
   try {
+    console.log("🏁 Iniciando corrida:", req.params.id);
     const result = await pool.query(`UPDATE corridas SET status='em_andamento', inicio_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     emitCorridaUpdate(io, req.params.id, { status: 'em_andamento', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao iniciar corrida:", err.message);
+    console.error("❌ Erro ao iniciar corrida:", err);
     return res.status(500).json({ error: "Erro ao iniciar corrida", details: err.message });
   }
 };
@@ -234,6 +251,7 @@ exports.finish = async (req, res) => {
   const { distancia, duracao, pagamento_confirmado, avaliacao } = req.body;
   const io = req.app.get("io");
   try {
+    console.log("🏁 Finalizando corrida:", req.params.id);
     const result = await pool.query(
       `UPDATE corridas SET status='finalizada', fim_em=NOW(), distancia=$1, duracao=$2, pagamento_confirmado=$3 WHERE id=$4 RETURNING *`,
       [distancia, duracao, pagamento_confirmado ?? true, req.params.id]
@@ -242,6 +260,7 @@ exports.finish = async (req, res) => {
     const corrida = result.rows[0];
 
     if (avaliacao) {
+      console.log("⭐ Avaliação recebida:", avaliacao);
       await pool.query(
         `INSERT INTO avaliacoes (corrida_id, passageiro_id, motorista_id, nota, comentario, criado_em)
          VALUES ($1,$2,$3,$4,$5,NOW())`,
@@ -252,7 +271,7 @@ exports.finish = async (req, res) => {
     emitCorridaUpdate(io, corrida.id, { status: 'finalizada', corrida });
     return res.json(corrida);
   } catch (err) {
-    console.error("❌ Erro ao finalizar corrida:", err.message);
+    console.error("❌ Erro ao finalizar corrida:", err);
     return res.status(500).json({ error: "Erro ao finalizar corrida", details: err.message });
   }
 };
@@ -263,13 +282,14 @@ exports.finish = async (req, res) => {
 exports.cancel = async (req, res) => {
   const io = req.app.get("io");
   try {
+    console.log("❌ Cancelando corrida:", req.params.id);
     const result = await pool.query(`UPDATE corridas SET status='cancelada', fim_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     emitCorridaUpdate(io, req.params.id, { status: 'cancelada', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao cancelar corrida:", err.message);
+    console.error("❌ Erro ao cancelar corrida:", err);
     return res.status(500).json({ error: "Erro ao cancelar corrida", details: err.message });
   }
 };
