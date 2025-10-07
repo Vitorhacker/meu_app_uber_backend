@@ -3,9 +3,6 @@ const router = express.Router();
 const authController = require("../controllers/authController");
 const { verifyToken } = require("../middlewares/authMiddleware");
 
-// ======================
-// PASSAGEIRO
-// ======================
 // Registro
 router.post("/register", authController.registerPassenger);
 
