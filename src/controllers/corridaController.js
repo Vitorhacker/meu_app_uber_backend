@@ -11,8 +11,7 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
   try {
     const coords = [`${origemCoords.longitude},${origemCoords.latitude}`];
 
-    // Adiciona paradas intermediárias, se houver
-    stops.forEach(stop => {
+    stops.forEach((stop) => {
       if (stop.latitude != null && stop.longitude != null) {
         coords.push(`${stop.longitude},${stop.latitude}`);
       }
@@ -20,7 +19,9 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
 
     coords.push(`${destinoCoords.longitude},${destinoCoords.latitude}`);
 
-    const url = `${OSRM_BASE_URL}/${coords.join(";")}?overview=full&geometries=geojson&steps=true`;
+    const url = `${OSRM_BASE_URL}/${coords.join(
+      ";"
+    )}?overview=full&geometries=geojson&steps=true`;
     const res = await axios.get(url);
 
     if (res.data.routes?.length) {
@@ -81,7 +82,6 @@ exports.create = async (req, res) => {
       pagamento,
     } = req.body;
 
-    // Corrigir coordenadas
     const origemCoordsFix = {
       latitude: origemCoords?.latitude ?? origemCoords?.lat,
       longitude: origemCoords?.longitude ?? origemCoords?.lng,
@@ -109,24 +109,26 @@ exports.create = async (req, res) => {
       ? stops.filter((s) => s.latitude != null && s.longitude != null)
       : [];
 
-    // Horário de partida
     let horarioPartidaDate = new Date();
     if (horario_partida) {
       const parsed = new Date(horario_partida);
       if (!isNaN(parsed)) horarioPartidaDate = parsed;
     }
 
-    // Calcular rota via OSRM
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, stops);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
 
-    // Cálculo do valor com base na categoria
     const valor_final =
       valor_estimado ||
-      calcularValor(category, distancia_km, duracao_min, stops.length, new Date());
+      calcularValor(
+        category,
+        distancia_km,
+        duracao_min,
+        stops.length,
+        new Date()
+      );
 
-    // Inserir corrida
     const result = await pool.query(
       `INSERT INTO corridas
         (passageiro_id, origem, destino, origem_lat, origem_lng,
@@ -183,7 +185,26 @@ exports.getById = async (req, res) => {
     if (!result.rows.length)
       return res.status(404).json({ error: "Corrida não encontrada" });
 
-    return res.json({ message: "Corrida encontrada", corrida: result.rows[0] });
+    const corrida = result.rows[0];
+
+    const distancia = parseFloat(corrida.distancia) || 0;
+    const duracao = parseFloat(corrida.duracao) || 0;
+    const stops = Array.isArray(corrida.paradas) ? corrida.paradas.length : 0;
+    const data = new Date(corrida.horario_partida || new Date());
+
+    const valor_hatch = calcularValor("FlashHatch", distancia, duracao, stops, data);
+    const valor_plus = calcularValor("FlashPlus", distancia, duracao, stops, data);
+    const valor_premium = calcularValor("FlashPremium", distancia, duracao, stops, data);
+
+    return res.json({
+      message: "Corrida encontrada",
+      corrida: {
+        ...corrida,
+        valor_hatch,
+        valor_plus,
+        valor_premium,
+      },
+    });
   } catch (err) {
     console.error("❌ [CorridaController][GET] Erro ao buscar corrida:", err);
     return res
@@ -293,6 +314,35 @@ exports.driverArrived = async (req, res) => {
     return res
       .status(500)
       .json({ error: "Erro ao atualizar chegada", details: err.message });
+  }
+};
+
+// ======================================================
+// 🚦 INICIAR CORRIDA
+// ======================================================
+exports.start = async (req, res) => {
+  const io = req.app.get("io");
+  try {
+    const result = await pool.query(
+      `UPDATE corridas SET status='em_andamento', iniciado_em=NOW() WHERE id=$1 RETURNING *`,
+      [req.params.id]
+    );
+
+    if (!result.rows.length)
+      return res.status(404).json({ error: "Corrida não encontrada" });
+
+    const corrida = result.rows[0];
+
+    emitCorridaUpdate(io, corrida.id, {
+      status: "em_andamento",
+      corrida,
+      message: "Corrida iniciada",
+    });
+
+    res.json({ message: "Corrida iniciada", corrida });
+  } catch (err) {
+    console.error("❌ [CorridaController][START] Erro:", err);
+    res.status(500).json({ error: "Erro ao iniciar corrida", details: err.message });
   }
 };
 
