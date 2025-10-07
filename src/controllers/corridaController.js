@@ -20,7 +20,6 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
 
     if (res.data.routes?.length) {
       const route = res.data.routes[0];
-      console.log("[CorridaController] Rota calculada:", { distancia: route.distance, duracao: route.duration });
       return { distancia: route.distance, duracao: route.duration, geojson: route.geometry, steps: route.legs };
     }
     return null;
@@ -33,7 +32,6 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
 // 🔹 Emitir evento via socket
 function emitCorridaUpdate(io, corrida_id, data) {
   try {
-    console.log("[CorridaController] Emitindo evento corridaUpdate:", corrida_id, data.status);
     io.to(`corrida_${corrida_id}`).emit("corridaUpdate", data);
   } catch (err) {
     console.error("❌ Erro ao emitir evento via socket:", err.message);
@@ -47,15 +45,11 @@ exports.create = async (req, res) => {
   const io = req.app.get("io");
   try {
     const user = req.user;
-    console.log("[CorridaController][CREATE] Usuário autenticado:", user);
-
     if (!user?.id) return res.status(401).json({ error: "Usuário não autenticado" });
 
-    // Busca passageiro pelo token
     const passageiroResult = await pool.query("SELECT * FROM passageiros WHERE id=$1", [user.id]);
     if (!passageiroResult.rows.length) return res.status(400).json({ error: "Passageiro não encontrado" });
     const passageiro = passageiroResult.rows[0];
-    console.log("[CorridaController][CREATE] Passageiro encontrado:", passageiro.id);
 
     let { origem, destino, origemCoords, destinoCoords, category, stops, valor_estimado, horario_partida, pagamento } = req.body;
 
@@ -83,7 +77,6 @@ exports.create = async (req, res) => {
     const duracao_min = rota?.duracao / 60 || 20;
     const valor_final = valor_estimado || calcularValor(category, distancia_km, duracao_min, stops.length, new Date());
 
-    // Inserir corrida
     const result = await pool.query(
       `INSERT INTO corridas
         (passageiro_id, origem, destino, origem_lat, origem_lng,
@@ -107,8 +100,6 @@ exports.create = async (req, res) => {
     );
 
     const corrida = result.rows[0];
-    console.log("✅ Corrida criada com ID:", corrida.id);
-
     emitCorridaUpdate(io, corrida.id, { status: 'criada', corrida });
 
     return res.status(201).json({ message: "Corrida criada com sucesso", corrida_id: corrida.id, corrida });
@@ -123,11 +114,9 @@ exports.create = async (req, res) => {
 // 🧭 BUSCAR CORRIDA PELO ID
 // ======================================================
 exports.getById = async (req, res) => {
-  const io = req.app.get("io");
   try {
     const result = await pool.query(`SELECT * FROM corridas WHERE id=$1`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
-    console.log("✅ Corrida buscada:", result.rows[0].id);
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ [CorridaController][GET] Erro ao buscar corrida:", err);
@@ -143,9 +132,7 @@ exports.findDriver = async (req, res) => {
   try {
     const result = await pool.query(`UPDATE corridas SET status='procurando_motorista' WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
-
     const corrida = result.rows[0];
-    console.log("🔎 Iniciando busca de motorista para corrida:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, message: "Procurando motorista..." });
     return res.json({ message: "Busca por motorista iniciada", corrida });
   } catch (err) {
@@ -172,7 +159,6 @@ exports.accept = async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
-    console.log("🚗 Motorista aceitou corrida:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, corrida });
     return res.json(corrida);
   } catch (err) {
@@ -190,7 +176,6 @@ exports.driverArrived = async (req, res) => {
     const result = await pool.query(`UPDATE corridas SET status='motorista_chegou', chegou_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
-    console.log("🚦 Motorista chegou para corrida:", req.params.id);
     emitCorridaUpdate(io, req.params.id, { status: 'motorista_chegou', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
@@ -208,7 +193,6 @@ exports.start = async (req, res) => {
     const result = await pool.query(`UPDATE corridas SET status='em_andamento', inicio_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
-    console.log("🏁 Corrida iniciada:", req.params.id);
     emitCorridaUpdate(io, req.params.id, { status: 'em_andamento', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
@@ -239,7 +223,6 @@ exports.finish = async (req, res) => {
       );
     }
 
-    console.log("🏁 Corrida finalizada:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: 'finalizada', corrida });
     return res.json(corrida);
   } catch (err) {
@@ -257,7 +240,6 @@ exports.cancel = async (req, res) => {
     const result = await pool.query(`UPDATE corridas SET status='cancelada', fim_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
-    console.log("❌ Corrida cancelada:", req.params.id);
     emitCorridaUpdate(io, req.params.id, { status: 'cancelada', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
@@ -267,15 +249,74 @@ exports.cancel = async (req, res) => {
 };
 
 // ======================================================
-// Exportar todas as funções
+// 🟢 GERENCIAR PARADAS (ADD / UPDATE)
 // ======================================================
-module.exports = {
-  create: exports.create,
-  getById: exports.getById,
-  findDriver: exports.findDriver,
-  accept: exports.accept,
-  driverArrived: exports.driverArrived,
-  start: exports.start,
-  finish: exports.finish,
-  cancel: exports.cancel,
+exports.addParada = async (req, res) => {
+  const io = req.app.get("io");
+  try {
+    const { lat, lng, nome } = req.body;
+    if (!lat || !lng || !nome) return res.status(400).json({ error: "Parâmetros inválidos" });
+
+    const corridaResult = await pool.query("SELECT * FROM corridas WHERE id=$1", [req.params.id]);
+    if (!corridaResult.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+
+    const corrida = corridaResult.rows[0];
+    const paradas = corrida.paradas ? [...corrida.paradas, { lat, lng, nome }] : [{ lat, lng, nome }];
+
+    // Recalcular rota e valor
+    const origemCoordsFix = { latitude: corrida.origem_lat, longitude: corrida.origem_lng };
+    const destinoCoordsFix = { latitude: corrida.destino_lat, longitude: corrida.destino_lng };
+    const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, paradas);
+    const distancia_km = rota?.distancia / 1000 || 10;
+    const duracao_min = rota?.duracao / 60 || 20;
+    const valor_final = calcularValor(corrida.category, distancia_km, duracao_min, paradas.length, new Date());
+
+    const updated = await pool.query(
+      `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
+      [paradas, distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+    );
+
+    const corridaAtualizada = updated.rows[0];
+    emitCorridaUpdate(io, req.params.id, { corrida: corridaAtualizada, status: corridaAtualizada.status });
+    res.json(corridaAtualizada);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao adicionar parada", details: err.message });
+  }
 };
+
+exports.updateParadas = async (req, res) => {
+  const io = req.app.get("io");
+  try {
+    const { paradas } = req.body;
+    if (!Array.isArray(paradas)) return res.status(400).json({ error: "Paradas inválidas" });
+
+    const corridaResult = await pool.query("SELECT * FROM corridas WHERE id=$1", [req.params.id]);
+    if (!corridaResult.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+
+    const corrida = corridaResult.rows[0];
+
+    // Recalcular rota e valor
+    const origemCoordsFix = { latitude: corrida.origem_lat, longitude: corrida.origem_lng };
+    const destinoCoordsFix = { latitude: corrida.destino_lat, longitude: corrida.destino_lng };
+    const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, paradas);
+    const distancia_km = rota?.distancia / 1000 || 10;
+    const duracao_min = rota?.duracao / 60 || 20;
+    const valor_final = calcularValor(corrida.category, distancia_km, duracao_min, paradas.length, new Date());
+
+    const updated = await pool.query(
+      `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
+      [paradas, distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+    );
+
+    const corridaAtualizada = updated.rows[0];
+    emitCorridaUpdate(io, req.params.id, { corrida: corridaAtualizada, status: corridaAtualizada.status });
+    res.json(corridaAtualizada);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao atualizar paradas", details: err.message });
+  }
+};
+
+// Exportar pool para rotas externas
+exports.pool = pool;

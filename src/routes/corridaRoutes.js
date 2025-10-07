@@ -1,10 +1,9 @@
 const express = require("express");
 const corridaController = require("../controllers/corridaController");
-const { verifyToken } = require("../middlewares/authMiddleware"); // Middleware de autenticação JWT
-
+const { verifyToken } = require("../middlewares/authMiddleware");
 const router = express.Router();
 
-// 🔹 Todas as rotas abaixo exigem usuário autenticado
+// Todas as rotas exigem usuário autenticado
 router.use(verifyToken);
 
 // 🟢 Criar corrida
@@ -30,5 +29,11 @@ router.post("/:id/finish", corridaController.finish);
 
 // ❌ Cancelar corrida
 router.post("/:id/cancel", corridaController.cancel);
+
+// 🟢 ADICIONAR PARADA
+router.post("/:id/paradas", corridaController.addParada);
+
+// 🟢 ATUALIZAR PARADAS
+router.put("/:id/paradas", corridaController.updateParadas);
 
 module.exports = router;
