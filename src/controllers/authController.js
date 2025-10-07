@@ -9,7 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 exports.register = async (req, res) => {
   try {
     const { nome, email, senha, cpf, telefone } = req.body;
-    console.log("🚀 Iniciando registro do passageiro:", { nome, email, cpf, telefone });
+    console.log("🚀 [AuthController] Registro iniciado:", { nome, email, cpf, telefone });
 
     const emailTrim = email.trim().toLowerCase();
     const cpfClean = cpf.replace(/\D/g, "");
@@ -21,10 +21,11 @@ exports.register = async (req, res) => {
     );
 
     if (existing.rows.length) {
-      console.log("⚠️ Passageiro já existe, login automático:", existing.rows[0].id);
       const existingUser = existing.rows[0];
       const token = jwt.sign({ userId: existingUser.id, role: "passageiro" }, JWT_SECRET, { expiresIn: "7d" });
       await pool.query("UPDATE passageiros SET token_permanente=$1 WHERE id=$2", [token, existingUser.id]);
+
+      console.log("⚠️ Passageiro já existe, login automático:", { id: existingUser.id, token });
       return res.status(200).json({ user: existingUser, token });
     }
 
@@ -37,14 +38,14 @@ exports.register = async (req, res) => {
     );
 
     const user = result.rows[0];
-
     const token = jwt.sign({ userId: user.id, role: "passageiro" }, JWT_SECRET, { expiresIn: "7d" });
     await pool.query("UPDATE passageiros SET token_permanente=$1 WHERE id=$2", [token, user.id]);
 
+    console.log("✅ Passageiro registrado:", { id: user.id, token });
     return res.status(201).json({ user, token });
 
   } catch (err) {
-    console.error("❌ Erro no registro do passageiro:", err);
+    console.error("❌ [AuthController] Erro no registro:", err);
     return res.status(500).json({ error: "Erro ao registrar usuário", details: err.message });
   }
 };
@@ -56,6 +57,7 @@ exports.login = async (req, res) => {
   try {
     const { email, senha } = req.body;
     const emailTrim = email.trim().toLowerCase();
+    console.log("🚀 [AuthController] Tentativa de login:", { email: emailTrim });
 
     const result = await pool.query(
       "SELECT * FROM passageiros WHERE email=$1 AND senha=$2",
@@ -63,6 +65,7 @@ exports.login = async (req, res) => {
     );
 
     if (!result.rows.length) {
+      console.warn("⚠️ [AuthController] Credenciais inválidas");
       return res.status(401).json({ error: "Credenciais inválidas" });
     }
 
@@ -70,10 +73,11 @@ exports.login = async (req, res) => {
     const token = jwt.sign({ userId: user.id, role: "passageiro" }, JWT_SECRET, { expiresIn: "7d" });
     await pool.query("UPDATE passageiros SET token_permanente=$1 WHERE id=$2", [token, user.id]);
 
+    console.log("✅ Login realizado:", { id: user.id, token });
     return res.json({ user, token });
 
   } catch (err) {
-    console.error("❌ Erro no login do passageiro:", err);
+    console.error("❌ [AuthController] Erro no login:", err);
     return res.status(500).json({ error: "Erro ao realizar login", details: err.message });
   }
 };
@@ -83,19 +87,25 @@ exports.login = async (req, res) => {
 // ======================================================
 exports.profile = async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Token ausente" });
+    // ⚠️ Usa req.user do middleware verifyToken
+    console.log("🚀 [AuthController] Buscando perfil, req.user:", req.user);
 
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
 
-    const result = await pool.query("SELECT * FROM passageiros WHERE id=$1", [decoded.userId]);
-    if (!result.rows.length) return res.status(404).json({ error: "Passageiro não encontrado" });
+    const result = await pool.query("SELECT * FROM passageiros WHERE id=$1", [req.user.id]);
+    if (!result.rows.length) {
+      console.warn("⚠️ [AuthController] Passageiro não encontrado, id:", req.user.id);
+      return res.status(404).json({ error: "Passageiro não encontrado" });
+    }
 
-    return res.json(result.rows[0]);
+    const user = result.rows[0];
+    console.log("✅ Perfil retornado:", { id: user.id, nome: user.nome, role: user.role });
+    return res.json({ user });
 
   } catch (err) {
-    console.error("❌ Erro ao buscar perfil:", err);
+    console.error("❌ [AuthController] Erro ao buscar perfil:", err);
     return res.status(500).json({ error: "Erro ao buscar perfil", details: err.message });
   }
 };

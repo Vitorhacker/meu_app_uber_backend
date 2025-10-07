@@ -20,6 +20,7 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
 
     if (res.data.routes?.length) {
       const route = res.data.routes[0];
+      console.log("[CorridaController] Rota calculada:", { distancia: route.distance, duracao: route.duration });
       return { distancia: route.distance, duracao: route.duration, geojson: route.geometry, steps: route.legs };
     }
     return null;
@@ -32,6 +33,7 @@ async function calcularRota(origemCoords, destinoCoords, stops = []) {
 // 🔹 Emitir evento via socket
 function emitCorridaUpdate(io, corrida_id, data) {
   try {
+    console.log("[CorridaController] Emitindo evento corridaUpdate:", corrida_id, data.status);
     io.to(`corrida_${corrida_id}`).emit("corridaUpdate", data);
   } catch (err) {
     console.error("❌ Erro ao emitir evento via socket:", err.message);
@@ -45,12 +47,15 @@ exports.create = async (req, res) => {
   const io = req.app.get("io");
   try {
     const user = req.user;
+    console.log("[CorridaController][CREATE] Usuário autenticado:", user);
+
     if (!user?.id) return res.status(401).json({ error: "Usuário não autenticado" });
 
     // Busca passageiro pelo token
     const passageiroResult = await pool.query("SELECT * FROM passageiros WHERE id=$1", [user.id]);
     if (!passageiroResult.rows.length) return res.status(400).json({ error: "Passageiro não encontrado" });
     const passageiro = passageiroResult.rows[0];
+    console.log("[CorridaController][CREATE] Passageiro encontrado:", passageiro.id);
 
     let { origem, destino, origemCoords, destinoCoords, category, stops, valor_estimado, horario_partida, pagamento } = req.body;
 
@@ -109,7 +114,7 @@ exports.create = async (req, res) => {
     return res.status(201).json({ message: "Corrida criada com sucesso", corrida_id: corrida.id, corrida });
 
   } catch (err) {
-    console.error("❌ Erro ao criar corrida:", err);
+    console.error("❌ [CorridaController][CREATE] Erro ao criar corrida:", err);
     return res.status(500).json({ error: "Erro ao criar corrida", details: err.message });
   }
 };
@@ -125,7 +130,7 @@ exports.getById = async (req, res) => {
     console.log("✅ Corrida buscada:", result.rows[0].id);
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao buscar corrida:", err);
+    console.error("❌ [CorridaController][GET] Erro ao buscar corrida:", err);
     return res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
   }
 };
@@ -144,7 +149,7 @@ exports.findDriver = async (req, res) => {
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, message: "Procurando motorista..." });
     return res.json({ message: "Busca por motorista iniciada", corrida });
   } catch (err) {
-    console.error("❌ Erro ao iniciar busca de motorista:", err);
+    console.error("❌ [CorridaController][FIND DRIVER] Erro:", err);
     return res.status(500).json({ error: "Erro ao iniciar busca", details: err.message });
   }
 };
@@ -171,7 +176,7 @@ exports.accept = async (req, res) => {
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, corrida });
     return res.json(corrida);
   } catch (err) {
-    console.error("❌ Erro ao aceitar corrida:", err);
+    console.error("❌ [CorridaController][ACCEPT] Erro:", err);
     return res.status(500).json({ error: "Erro ao aceitar corrida", details: err.message });
   }
 };
@@ -189,7 +194,7 @@ exports.driverArrived = async (req, res) => {
     emitCorridaUpdate(io, req.params.id, { status: 'motorista_chegou', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao atualizar chegada:", err);
+    console.error("❌ [CorridaController][ARRIVED] Erro:", err);
     return res.status(500).json({ error: "Erro ao atualizar chegada", details: err.message });
   }
 };
@@ -207,7 +212,7 @@ exports.start = async (req, res) => {
     emitCorridaUpdate(io, req.params.id, { status: 'em_andamento', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao iniciar corrida:", err);
+    console.error("❌ [CorridaController][START] Erro:", err);
     return res.status(500).json({ error: "Erro ao iniciar corrida", details: err.message });
   }
 };
@@ -238,7 +243,7 @@ exports.finish = async (req, res) => {
     emitCorridaUpdate(io, corrida.id, { status: 'finalizada', corrida });
     return res.json(corrida);
   } catch (err) {
-    console.error("❌ Erro ao finalizar corrida:", err);
+    console.error("❌ [CorridaController][FINISH] Erro:", err);
     return res.status(500).json({ error: "Erro ao finalizar corrida", details: err.message });
   }
 };
@@ -256,13 +261,13 @@ exports.cancel = async (req, res) => {
     emitCorridaUpdate(io, req.params.id, { status: 'cancelada', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Erro ao cancelar corrida:", err);
+    console.error("❌ [CorridaController][CANCEL] Erro:", err);
     return res.status(500).json({ error: "Erro ao cancelar corrida", details: err.message });
   }
 };
 
 // ======================================================
-// Exportar todas as funções corretamente
+// Exportar todas as funções
 // ======================================================
 module.exports = {
   create: exports.create,
