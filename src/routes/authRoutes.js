@@ -1,18 +1,25 @@
 const express = require("express");
 const router = express.Router();
-const { registerPassenger, loginPassenger, getProfile, logout } = require("../controllers/authController");
+const {
+  registerUser,
+  loginUser,
+  getProfile
+} = require("../controllers/authController");
 const { verifyToken } = require("../middlewares/authMiddleware");
 
-// Registro passageiro
-router.post("/register", registerPassenger);
+// Logs para depuração
+router.use((req, res, next) => {
+  console.log(`📡 [AUTH] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
-// Login passageiro
-router.post("/login", loginPassenger);
+// Registro usuário + passageiro
+router.post("/register", registerUser);
+
+// Login
+router.post("/login", loginUser);
 
 // Perfil
 router.get("/profile", verifyToken, getProfile);
-
-// Logout
-router.post("/logout", verifyToken, logout);
 
 module.exports = router;
