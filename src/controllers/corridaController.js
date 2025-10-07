@@ -51,7 +51,7 @@ exports.create = async (req, res) => {
     if (!passageiroResult.rows.length) return res.status(400).json({ error: "Passageiro não encontrado" });
     const passageiro = passageiroResult.rows[0];
 
-    let { origem, destino, origemCoords, destinoCoords, category, stops, valor_estimado, horario_partida, pagamento } = req.body;
+    let { origem, destino, origemCoords, destinoCoords, category, stops, horario_partida, pagamento } = req.body;
 
     const origemCoordsFix = { latitude: origemCoords?.latitude ?? origemCoords?.lat, longitude: origemCoords?.longitude ?? origemCoords?.lng };
     const destinoCoordsFix = { latitude: destinoCoords?.latitude ?? destinoCoords?.lat, longitude: destinoCoords?.longitude ?? destinoCoords?.lng };
@@ -75,24 +75,33 @@ exports.create = async (req, res) => {
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, stops);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
-    const valor_final = valor_estimado || calcularValor(category, distancia_km, duracao_min, stops.length, new Date());
+
+    // 🔹 calcular todos os valores
+    const valor_hatch = calcularValor('hatch', distancia_km, duracao_min, stops.length, new Date());
+    const valor_plus = calcularValor('sedan', distancia_km, duracao_min, stops.length, new Date());
+    const valor_premium = calcularValor('suv', distancia_km, duracao_min, stops.length, new Date());
 
     const result = await pool.query(
       `INSERT INTO corridas
         (passageiro_id, origem, destino, origem_lat, origem_lng,
          destino_lat, destino_lng, category, status, criado_em,
-         paradas, distancia, duracao, valor_estimado, rota_geojson,
+         paradas, distancia, duracao, valor_estimado, valor_hatch, valor_plus, valor_premium, rota_geojson,
          horario_partida, pagamento)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'criada',NOW(),
-               $9,$10,$11,$12,$13,$14,$15)
+               $9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING *`,
       [
         passageiro.id,
         origem, destino,
         origemCoordsFix.latitude, origemCoordsFix.longitude,
         destinoCoordsFix.latitude, destinoCoordsFix.longitude,
-        category, JSON.stringify(stops),
-        distancia_km, duracao_min, valor_final,
+        category,
+        JSON.stringify(stops),
+        distancia_km, duracao_min,
+        valor_hatch, // valor_estimado default será o hatch
+        valor_hatch,
+        valor_plus,
+        valor_premium,
         rota?.geojson || null,
         horarioPartidaDate,
         pagamento || "dinheiro"
@@ -252,7 +261,7 @@ exports.cancel = async (req, res) => {
 };
 
 // ======================================================
-// 🟢 GERENCIAR PARADAS (ADD / UPDATE)
+// 🟢 GERENCIAR PARADAS (ADD / UPDATE) com valores por categoria
 // ======================================================
 exports.addParada = async (req, res) => {
   const io = req.app.get("io");
@@ -271,11 +280,16 @@ exports.addParada = async (req, res) => {
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, paradas);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
-    const valor_final = calcularValor(corrida.category, distancia_km, duracao_min, paradas.length, new Date());
+
+    // 🔹 recalcular todos os valores
+    const valor_hatch = calcularValor('hatch', distancia_km, duracao_min, paradas.length, new Date());
+    const valor_plus = calcularValor('sedan', distancia_km, duracao_min, paradas.length, new Date());
+    const valor_premium = calcularValor('suv', distancia_km, duracao_min, paradas.length, new Date());
 
     const updated = await pool.query(
-      `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [paradas, distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+      `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4,
+       valor_hatch=$5, valor_plus=$6, valor_premium=$7, rota_geojson=$8 WHERE id=$9 RETURNING *`,
+      [paradas, distancia_km, duracao_min, valor_hatch, valor_hatch, valor_plus, valor_premium, rota?.geojson || null, req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
@@ -303,11 +317,16 @@ exports.updateParadas = async (req, res) => {
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, paradas);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
-    const valor_final = calcularValor(corrida.category, distancia_km, duracao_min, paradas.length, new Date());
+
+    // 🔹 recalcular todos os valores
+    const valor_hatch = calcularValor('hatch', distancia_km, duracao_min, paradas.length, new Date());
+    const valor_plus = calcularValor('sedan', distancia_km, duracao_min, paradas.length, new Date());
+    const valor_premium = calcularValor('suv', distancia_km, duracao_min, paradas.length, new Date());
 
     const updated = await pool.query(
-      `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [paradas, distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+      `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4,
+       valor_hatch=$5, valor_plus=$6, valor_premium=$7, rota_geojson=$8 WHERE id=$9 RETURNING *`,
+      [paradas, distancia_km, duracao_min, valor_hatch, valor_hatch, valor_plus, valor_premium, rota?.geojson || null, req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
