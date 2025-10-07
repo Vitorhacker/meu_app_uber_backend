@@ -9,14 +9,21 @@ async function verifyToken(req, res, next) {
   if (!tokenHeader) return res.status(403).json({ error: "Token não fornecido" });
 
   const token = tokenHeader.replace("Bearer ", "").trim();
+  console.log("[AuthMiddleware] Token recebido:", token);
 
   try {
     // 1️⃣ Tenta JWT
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
+      console.log("[AuthMiddleware] Token JWT decodificado:", decoded);
+      req.user = {
+        id: decoded.userId,   // ⚠️ usa userId do token
+        role: decoded.role,
+      };
       return next();
-    } catch {}
+    } catch (jwtErr) {
+      console.warn("[AuthMiddleware] JWT inválido, tentando token permanente");
+    }
 
     // 2️⃣ Tenta token permanente
     const result = await pool.query(
@@ -24,9 +31,14 @@ async function verifyToken(req, res, next) {
       [token]
     );
 
-    if (!result.rows.length) return res.status(401).json({ error: "Token inválido ou expirado" });
+    if (!result.rows.length) {
+      console.warn("[AuthMiddleware] Token permanente inválido");
+      return res.status(401).json({ error: "Token inválido ou expirado" });
+    }
 
     const user = result.rows[0];
+    console.log("[AuthMiddleware] Token permanente válido, usuário:", user.id);
+
     req.user = {
       id: user.id,
       nome: user.nome,
@@ -35,6 +47,7 @@ async function verifyToken(req, res, next) {
       telefone: user.telefone,
       token_permanente: user.token_permanente,
     };
+
     next();
   } catch (err) {
     console.error("❌ Erro interno authMiddleware:", err);
