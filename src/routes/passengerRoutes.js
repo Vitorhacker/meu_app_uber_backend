@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { createPassenger, loginPassenger } = require("../controllers/passengerController");
+const passengerController = require("../controllers/passengerController");
 
-// Cria passageiro com token permanente
-router.post("/", createPassenger);
+// Registro
+router.post("/", passengerController.registerPassenger);
 
-// Login (opcional, se quiser manter separado)
-router.post("/login", loginPassenger);
+// Login
+router.post("/login", passengerController.loginPassenger);
 
 module.exports = router;
