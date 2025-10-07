@@ -4,18 +4,18 @@
  * Tarifas base por categoria de veículo (R$/km)
  */
 const tarifas = {
-  FlashHatch: 3.0,    // Hatch pequeno
-  FlashPlus: 4.5,     // Sedan
-  FlashPremium: 6.0,  // SUV / Premium
+  FlashHatch: 2.0,    // Hatch pequeno
+  FlashPlus: 3.5,     // Sedan
+  FlashPremium: 5.0,  // SUV / Premium
 };
 
 /**
  * Valor mínimo por corrida
  */
 const VALOR_MINIMO = {
-  FlashHatch: 8.0,
-  FlashPlus: 12.0,
-  FlashPremium: 20.0,
+  FlashHatch: 5.5,
+  FlashPlus: 8.0,
+  FlashPremium: 14.0,
 };
 
 /**
@@ -24,7 +24,7 @@ const VALOR_MINIMO = {
 const MULTIPLICADOR_PICO = {
   FlashHatch: 1.2,
   FlashPlus: 1.25,
-  FlashPremium: 1.3,
+  FlashPremium: 1.35,
 };
 
 /**
