@@ -1,13 +1,34 @@
 const express = require("express");
-const router = express.Router();
 const corridaController = require("../controllers/corridaController");
-const { verifyToken, requireRole } = require("../middlewares/authMiddleware");
+const { verifyToken } = require("../middlewares/authMiddleware"); // Middleware de autenticação JWT
 
-// Passageiro
-router.post("/", verifyToken, requireRole("passageiro"), corridaController.create);
-router.get("/:id", verifyToken, requireRole("passageiro"), corridaController.getById);
-router.post("/:id/find-driver", verifyToken, requireRole("passageiro"), corridaController.findDriver);
-router.post("/:id/finish", verifyToken, requireRole("passageiro"), corridaController.finish);
-router.post("/:id/cancel", verifyToken, requireRole("passageiro"), corridaController.cancel);
+const router = express.Router();
+
+// 🔹 Todas as rotas abaixo exigem usuário autenticado
+router.use(verifyToken);
+
+// 🟢 Criar corrida
+router.post("/", corridaController.create);
+
+// 🧭 Buscar corrida pelo ID
+router.get("/:id", corridaController.getById);
+
+// 🚕 Iniciar busca de motorista
+router.post("/:id/findDriver", corridaController.findDriver);
+
+// 🚗 Motorista aceita corrida
+router.post("/:id/accept", corridaController.accept);
+
+// 🚦 Motorista chegou
+router.post("/:id/driverArrived", corridaController.driverArrived);
+
+// 🚦 Iniciar corrida
+router.post("/:id/start", corridaController.start);
+
+// 🏁 Finalizar corrida
+router.post("/:id/finish", corridaController.finish);
+
+// ❌ Cancelar corrida
+router.post("/:id/cancel", corridaController.cancel);
 
 module.exports = router;

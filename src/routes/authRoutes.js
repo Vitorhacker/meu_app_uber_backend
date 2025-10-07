@@ -1,25 +1,50 @@
 const express = require("express");
 const router = express.Router();
 const {
-  registerUser,
-  loginUser,
-  getProfile
+  registerPassenger,
+  loginPassenger,
+  getProfile,
+  logout
 } = require("../controllers/authController");
+
 const { verifyToken } = require("../middlewares/authMiddleware");
 
-// Logs para depuração
+// ==========================
+// DEPURAÇÃO / LOGS
+// ==========================
 router.use((req, res, next) => {
   console.log(`📡 [AUTH] ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// Registro usuário + passageiro
-router.post("/register", registerUser);
+// ==========================
+// REGISTRO PASSAGEIRO
+// ==========================
+router.post("/register", async (req, res) => {
+  console.log("🚀 Rota /auth/register chamada");
+  await registerPassenger(req, res);
+});
 
-// Login
-router.post("/login", loginUser);
+// ==========================
+// LOGIN PASSAGEIRO
+// ==========================
+router.post("/login", async (req, res) => {
+  console.log("🔑 Rota /auth/login chamada");
+  await loginPassenger(req, res);
+});
 
-// Perfil
-router.get("/profile", verifyToken, getProfile);
+// ==========================
+// PERFIL (token obrigatório)
+router.get("/profile", verifyToken, async (req, res) => {
+  console.log("👤 Rota /auth/profile chamada por:", req.user);
+  await getProfile(req, res);
+});
+
+// ==========================
+// LOGOUT
+router.post("/logout", verifyToken, async (req, res) => {
+  console.log("🚪 Rota /auth/logout chamada por:", req.user);
+  await logout(req, res);
+});
 
 module.exports = router;
