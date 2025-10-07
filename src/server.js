@@ -16,12 +16,16 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 8082;
 
+// ======================================================
 // Middlewares
+// ======================================================
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Teste de conexão PostgreSQL
+// ======================================================
+// Banco de dados
+// ======================================================
 pool.connect()
   .then(client => {
     console.log("✅ Conexão com PostgreSQL estabelecida");
@@ -32,29 +36,54 @@ pool.connect()
     process.exit(1);
   });
 
+// ======================================================
 // WebSocket
+// ======================================================
 io.on("connection", socket => {
-  console.log("📡 Cliente conectado:", socket.id);
+    console.log("📡 Cliente conectado:", socket.id);
 });
 app.set("io", io);
 
-// Carregamento automático de rotas
+// ======================================================
+// Carregamento automático de rotas (com proteção)
+// ======================================================
+const loadedRoutes = new Set();
 const routesPath = path.join(__dirname, "routes");
+
 fs.readdirSync(routesPath).forEach(file => {
   if (file.endsWith("Routes.js")) {
-    const route = require(path.join(routesPath, file));
     const name = file.replace("Routes.js", "").toLowerCase();
-    app.use(`/api/${name}`, route);
-    console.log(`📌 Rota carregada: /api/${name}`);
+
+    if (loadedRoutes.has(name)) {
+      console.warn(`⚠️  Rota duplicada ignorada: /api/${name}`);
+      return;
+    }
+
+    try {
+      const route = require(path.join(routesPath, file));
+      app.use(`/api/${name}`, route);
+      loadedRoutes.add(name);
+      console.log(`📌 Rota carregada: /api/${name}`);
+    } catch (err) {
+      console.error(`❌ Falha ao carregar rota ${file}:`, err.message);
+    }
   }
 });
 
-// 🔹 Alias manual para /api/corridas
-const corridaRoute = require("./routes/corridaRoutes"); // certifique que o arquivo existe
-app.use("/api/corridas", corridaRoute); 
-console.log("📌 Alias manual carregado: /api/corridas");
+// ======================================================
+// Alias manuais (apenas se necessário)
+// ======================================================
+try {
+  const corridaRoute = require("./routes/corridaRoutes");
+  app.use("/api/corridas", corridaRoute);
+  console.log("📌 Alias manual carregado: /api/corridas");
+} catch (err) {
+  console.warn("⚠️  Alias /api/corridas não pôde ser carregado:", err.message);
+}
 
+// ======================================================
 // Rota de retorno PicPay
+// ======================================================
 app.get("/app/checkout-return", (req, res) => {
   res.send(`
     <html>
@@ -69,14 +98,20 @@ app.get("/app/checkout-return", (req, res) => {
   `);
 });
 
+// ======================================================
 // Middleware global de erros
+// ======================================================
 app.use((err, req, res, next) => {
   console.error("❌ Erro capturado:", err);
-  if (err.type === "validation") return res.status(400).json({ errors: err.errors });
-  return res.status(500).json({ error: "Erro interno do servidor" });
+  if (err.type === "validation") {
+    return res.status(400).json({ errors: err.errors });
+  }
+  res.status(500).json({ error: "Erro interno do servidor" });
 });
 
-// Inicia servidor
+// ======================================================
+// Inicialização do servidor
+// ======================================================
 server.listen(PORT, () => {
   console.log(`✅ Servidor rodando em http://localhost:${PORT}`);
 });
