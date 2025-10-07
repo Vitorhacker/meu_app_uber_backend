@@ -73,13 +73,7 @@ fs.readdirSync(routesPath).forEach(file => {
 // ======================================================
 // Alias manuais (apenas se necessário)
 // ======================================================
-try {
-  const corridaRoute = require("./routes/corridaRoutes");
-  app.use("/api/corridas", corridaRoute);
-  console.log("📌 Alias manual carregado: /api/corridas");
-} catch (err) {
-  console.warn("⚠️  Alias /api/corridas não pôde ser carregado:", err.message);
-}
+
 
 // ======================================================
 // Rota de retorno PicPay

@@ -20,7 +20,7 @@ async function verifyToken(req, res, next) {
 
     // 2️⃣ Tenta token permanente
     const result = await pool.query(
-      "SELECT id, nome, email, role, telefone, token_permanente FROM usuarios WHERE token_permanente=$1",
+      "SELECT id, nome, email, role, telefone, token_permanente FROM passageiros WHERE token_permanente=$1",
       [token]
     );
 

@@ -43,15 +43,12 @@ function emitCorridaUpdate(io, corrida_id, data) {
 // ======================================================
 exports.create = async (req, res) => {
   const io = req.app.get("io");
-
   try {
-    console.log("🚀 Requisição criar corrida:", req.body);
-
-    const user = req.user; // ⚡ passageiro autenticado
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Usuário não autenticado" });
 
-    // Busca passageiro vinculado
-    const passageiroResult = await pool.query("SELECT * FROM passageiros WHERE user_id=$1", [user.id]);
+    // Busca passageiro pelo token
+    const passageiroResult = await pool.query("SELECT * FROM passageiros WHERE id=$1", [user.id]);
     if (!passageiroResult.rows.length) return res.status(400).json({ error: "Passageiro não encontrado" });
     const passageiro = passageiroResult.rows[0];
 
@@ -60,7 +57,6 @@ exports.create = async (req, res) => {
     const origemCoordsFix = { latitude: origemCoords?.latitude ?? origemCoords?.lat, longitude: origemCoords?.longitude ?? origemCoords?.lng };
     const destinoCoordsFix = { latitude: destinoCoords?.latitude ?? destinoCoords?.lat, longitude: destinoCoords?.longitude ?? destinoCoords?.lng };
 
-    // Valida campos obrigatórios
     const missing = [];
     if (!origem) missing.push("origem");
     if (!origemCoordsFix.latitude || !origemCoordsFix.longitude) missing.push("origemCoords");
@@ -122,9 +118,11 @@ exports.create = async (req, res) => {
 // 🧭 BUSCAR CORRIDA PELO ID
 // ======================================================
 exports.getById = async (req, res) => {
+  const io = req.app.get("io");
   try {
     const result = await pool.query(`SELECT * FROM corridas WHERE id=$1`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
+    console.log("✅ Corrida buscada:", result.rows[0].id);
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ Erro ao buscar corrida:", err);
@@ -142,6 +140,7 @@ exports.findDriver = async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
+    console.log("🔎 Iniciando busca de motorista para corrida:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, message: "Procurando motorista..." });
     return res.json({ message: "Busca por motorista iniciada", corrida });
   } catch (err) {
@@ -168,6 +167,7 @@ exports.accept = async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
+    console.log("🚗 Motorista aceitou corrida:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: corrida.status, corrida });
     return res.json(corrida);
   } catch (err) {
@@ -185,6 +185,7 @@ exports.driverArrived = async (req, res) => {
     const result = await pool.query(`UPDATE corridas SET status='motorista_chegou', chegou_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
+    console.log("🚦 Motorista chegou para corrida:", req.params.id);
     emitCorridaUpdate(io, req.params.id, { status: 'motorista_chegou', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
@@ -202,6 +203,7 @@ exports.start = async (req, res) => {
     const result = await pool.query(`UPDATE corridas SET status='em_andamento', inicio_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
+    console.log("🏁 Corrida iniciada:", req.params.id);
     emitCorridaUpdate(io, req.params.id, { status: 'em_andamento', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
@@ -232,6 +234,7 @@ exports.finish = async (req, res) => {
       );
     }
 
+    console.log("🏁 Corrida finalizada:", corrida.id);
     emitCorridaUpdate(io, corrida.id, { status: 'finalizada', corrida });
     return res.json(corrida);
   } catch (err) {
@@ -249,10 +252,25 @@ exports.cancel = async (req, res) => {
     const result = await pool.query(`UPDATE corridas SET status='cancelada', fim_em=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Corrida não encontrada" });
 
+    console.log("❌ Corrida cancelada:", req.params.id);
     emitCorridaUpdate(io, req.params.id, { status: 'cancelada', corrida: result.rows[0] });
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ Erro ao cancelar corrida:", err);
     return res.status(500).json({ error: "Erro ao cancelar corrida", details: err.message });
   }
+};
+
+// ======================================================
+// Exportar todas as funções corretamente
+// ======================================================
+module.exports = {
+  create: exports.create,
+  getById: exports.getById,
+  findDriver: exports.findDriver,
+  accept: exports.accept,
+  driverArrived: exports.driverArrived,
+  start: exports.start,
+  finish: exports.finish,
+  cancel: exports.cancel,
 };

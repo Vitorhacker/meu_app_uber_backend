@@ -1,7 +1,7 @@
-// routes/authRouter.js
 const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/authController");
+const { verifyToken } = require("../middlewares/authMiddleware"); // Para proteger rota /profile
 
 // ======================================================
 // 🔹 Registrar passageiro
@@ -35,7 +35,7 @@ router.post("/login", async (req, res) => {
 // 🔹 Obter perfil do usuário logado
 // GET /api/auth/profile
 // ======================================================
-router.get("/profile", async (req, res) => {
+router.get("/profile", verifyToken, async (req, res) => { // Protegido pelo middleware
   console.log("📤 Requisição recebida para obter perfil do usuário");
   try {
     await authController.profile(req, res);
