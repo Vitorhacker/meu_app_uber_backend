@@ -1,3 +1,4 @@
+// controllers/authController.js
 const pool = require("../db");
 const jwt = require("jsonwebtoken");
 
@@ -11,14 +12,23 @@ exports.register = async (req, res) => {
     const { nome, email, senha, cpf, telefone } = req.body;
     console.log("🚀 Iniciando registro do passageiro:", { nome, email, cpf, telefone });
 
+    // Remover espaços e padronizar
+    const emailTrim = email.trim().toLowerCase();
+    const cpfClean = cpf.replace(/\D/g, "");
+
     // Verificar se já existe usuário com email ou cpf
     const existing = await pool.query(
       "SELECT * FROM passageiros WHERE email=$1 OR cpf=$2",
-      [email, cpf]
+      [emailTrim, cpfClean]
     );
+
     if (existing.rows.length) {
-      console.log("⚠️ Usuário já existe:", existing.rows[0].id);
-      return res.status(400).json({ error: "Usuário já existe" });
+      console.log("⚠️ Usuário já existe, tentando login automático:", existing.rows[0].id);
+      // Caso já exista, gerar token e retornar para login automático
+      const existingUser = existing.rows[0];
+      const token = jwt.sign({ userId: existingUser.id, role: "passageiro" }, JWT_SECRET, { expiresIn: "7d" });
+      await pool.query("UPDATE passageiros SET token_permanente=$1 WHERE id=$2", [token, existingUser.id]);
+      return res.status(200).json({ user: existingUser, token });
     }
 
     // Inserir passageiro no banco
@@ -26,7 +36,7 @@ exports.register = async (req, res) => {
       `INSERT INTO passageiros (nome, email, senha, cpf, telefone, criado_em)
        VALUES ($1,$2,$3,$4,$5,NOW())
        RETURNING *`,
-      [nome, email, senha, cpf, telefone]
+      [nome, emailTrim, senha, cpfClean, telefone]
     );
 
     const user = result.rows[0];
@@ -61,13 +71,15 @@ exports.login = async (req, res) => {
     const { email, senha } = req.body;
     console.log("🚀 Tentando login do passageiro:", email);
 
+    const emailTrim = email.trim().toLowerCase();
+
     const result = await pool.query(
       "SELECT * FROM passageiros WHERE email=$1 AND senha=$2",
-      [email, senha]
+      [emailTrim, senha]
     );
 
     if (!result.rows.length) {
-      console.warn("⚠️ Credenciais inválidas para login:", email);
+      console.warn("⚠️ Credenciais inválidas para login:", emailTrim);
       return res.status(401).json({ error: "Credenciais inválidas" });
     }
 
