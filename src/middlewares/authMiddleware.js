@@ -1,22 +1,17 @@
-// middlewares/authMiddleware.js
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersegredo123";
 
-// ======================================================
-// Middleware: Verifica token (JWT ou token permanente)
-// ======================================================
+// Middleware que verifica se o token é válido
 async function verifyToken(req, res, next) {
   const tokenHeader = req.headers["authorization"];
-  if (!tokenHeader) {
-    return res.status(403).json({ error: "Token não fornecido" });
-  }
+  if (!tokenHeader) return res.status(403).json({ error: "Token não fornecido" });
 
   const token = tokenHeader.replace("Bearer ", "").trim();
 
   try {
-    // 1️⃣ Tenta verificar como JWT normal
+    // 1️⃣ Tenta validar JWT
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       req.user = decoded;
@@ -25,7 +20,7 @@ async function verifyToken(req, res, next) {
       // Não é JWT válido, tenta token permanente
     }
 
-    // 2️⃣ Verifica token permanente no banco (apenas usuários/passageiros)
+    // 2️⃣ Valida token permanente no banco
     const result = await pool.query(
       `SELECT id, nome, email, role, telefone, token_permanente
        FROM usuarios
@@ -33,9 +28,7 @@ async function verifyToken(req, res, next) {
       [token]
     );
 
-    if (!result.rows.length) {
-      return res.status(401).json({ error: "Token inválido ou expirado" });
-    }
+    if (!result.rows.length) return res.status(401).json({ error: "Token inválido ou expirado" });
 
     const user = result.rows[0];
     req.user = {
@@ -50,13 +43,11 @@ async function verifyToken(req, res, next) {
     next();
   } catch (err) {
     console.error("Erro interno auth:", err.message);
-    return res.status(500).json({ error: "Erro ao autenticar usuário", details: err.message });
+    return res.status(500).json({ error: "Erro ao autenticar usuário" });
   }
 }
 
-// ======================================================
-// Middleware: Verifica role do usuário
-// ======================================================
+// Middleware para verificar role
 function requireRole(role) {
   return (req, res, next) => {
     if (!req.user || req.user.role !== role) {
