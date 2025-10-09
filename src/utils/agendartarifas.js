@@ -1,8 +1,9 @@
 // src/utils/agendartarifas.js
 
 // 🔹 Base de tarifas gerais (ajustáveis)
-const tarifaBasePorKm = 1.9; // valor médio base por km
 const tarifaMinima = 15; // valor mínimo de corrida
+const tarifaCurtaKm = 2.78; // até 50 km
+const tarifaLongaKm = 1.98; // acima de 50 km
 
 /**
  * Calcula tarifa com base apenas na distância
@@ -16,9 +17,13 @@ function calcularTarifa({ origemEndereco, destinoEndereco, distanciaKm }) {
     throw new Error("Distância inválida para cálculo de tarifa");
   }
 
-  // valor base do trajeto
-  const valorPorKm = parseFloat(tarifaBasePorKm.toFixed(2));
-  const valorTotal = Math.max(tarifaMinima, parseFloat((distanciaKm * valorPorKm).toFixed(2)));
+  // escolhe tarifa por km dependendo da distância
+  const valorPorKm = distanciaKm <= 50 ? tarifaCurtaKm : tarifaLongaKm;
+
+  const valorTotal = Math.max(
+    tarifaMinima,
+    parseFloat((distanciaKm * valorPorKm).toFixed(2))
+  );
 
   return {
     origemEndereco,
@@ -27,7 +32,7 @@ function calcularTarifa({ origemEndereco, destinoEndereco, distanciaKm }) {
     valorPorKm,
     valorMinimo: tarifaMinima,
     valorTotal,
-    tipo: "dinâmico",
+    tipo: distanciaKm <= 50 ? "curta" : "longa",
   };
 }
 
@@ -37,12 +42,16 @@ function calcularTarifa({ origemEndereco, destinoEndereco, distanciaKm }) {
 function listarTarifas() {
   return [
     {
-      descricao: "Tarifa base por km",
-      valor: tarifaBasePorKm,
-    },
-    {
       descricao: "Tarifa mínima",
       valor: tarifaMinima,
+    },
+    {
+      descricao: "Tarifa por km (até 50 km)",
+      valor: tarifaCurtaKm,
+    },
+    {
+      descricao: "Tarifa por km (acima de 50 km)",
+      valor: tarifaLongaKm,
     },
   ];
 }
