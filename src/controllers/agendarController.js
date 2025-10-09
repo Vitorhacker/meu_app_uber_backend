@@ -16,6 +16,7 @@ async function criarAgendamento(req, res) {
       passageiros,
       tarifaOpcional,
       distanciaKm,
+      formaPagamento, // ✅ adicionado
     } = req.body;
 
     if (!origemCidade || !destinoCidade || !quando || !passageiros) {
@@ -27,7 +28,7 @@ async function criarAgendamento(req, res) {
 
     // 🔹 Calcula tarifa
     const tarifaCalculada = calcularTarifa({
-      origem: origemEndereço,
+      origem: origemEndereco,
       destino: destinoEndereco,
       distanciaKm: distanciaKm || 0, // se não passar, pode calcular via API de mapas depois
     });
@@ -35,8 +36,8 @@ async function criarAgendamento(req, res) {
     // 🔹 Inserir no banco de dados tabela `agendar`
     const result = await db.query(
       `INSERT INTO agendar 
-      (origem_cidade, origem_endereco, destino_cidade, destino_endereco, quando, passageiros, tarifa_sugerida, valor_estimado, status) 
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      (origem_cidade, origem_endereco, destino_cidade, destino_endereco, quando, passageiros, tarifa_sugerida, valor_estimado, forma_pagamento, status) 
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [
         origemCidade,
         origemEndereco,
@@ -46,6 +47,7 @@ async function criarAgendamento(req, res) {
         passageiros,
         tarifaOpcional || null,
         tarifaCalculada.valorTotal,
+        formaPagamento || null, // ✅ aqui
         "pendente", // status inicial
       ]
     );
