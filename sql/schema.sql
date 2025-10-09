@@ -13,6 +13,48 @@ CREATE TABLE IF NOT EXISTS usuarios (
     ultimo_login TIMESTAMP NULL
 );
 
+-- 🔹 Criação da tabela agendar
+CREATE TABLE IF NOT EXISTS agendar (
+    agenda_id SERIAL PRIMARY KEY,
+    origem_cidade VARCHAR(255) NOT NULL,
+    origem_endereco VARCHAR(255),
+    destino_cidade VARCHAR(255) NOT NULL,
+    destino_endereco VARCHAR(255),
+    quando TIMESTAMP NOT NULL,
+    passageiros INT NOT NULL,
+    tarifa_sugerida NUMERIC(10,2),
+    valor_estimado NUMERIC(10,2) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pendente',
+    motorista_id INT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- 🔹 Função para atualizar updated_at automaticamente
+CREATE OR REPLACE FUNCTION atualizar_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 🔹 Trigger que atualiza updated_at a cada UPDATE
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_trigger 
+        WHERE tgname = 'trigger_update_agendar_updated_at'
+    ) THEN
+        CREATE TRIGGER trigger_update_agendar_updated_at
+        BEFORE UPDATE ON agendar
+        FOR EACH ROW
+        EXECUTE FUNCTION atualizar_updated_at();
+    END IF;
+END $$;
+
+
 -- Motoristas
 CREATE TABLE IF NOT EXISTS motoristas (
     id BIGINT PRIMARY KEY,
