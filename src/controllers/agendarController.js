@@ -27,8 +27,8 @@ async function criarAgendamento(req, res) {
 
     // 🔹 Calcula tarifa
     const tarifaCalculada = calcularTarifa({
-      origem: origemCidade,
-      destino: destinoCidade,
+      origem: origemEndereço,
+      destino: destinoEndereco,
       distanciaKm: distanciaKm || 0, // se não passar, pode calcular via API de mapas depois
     });
 
