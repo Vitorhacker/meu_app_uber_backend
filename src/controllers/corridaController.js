@@ -1,3 +1,4 @@
+// src/controllers/corridaController.js
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 const axios = require("axios");
@@ -147,7 +148,7 @@ exports.create = async (req, res) => {
         destinoCoordsFix.latitude,
         destinoCoordsFix.longitude,
         category,
-        JSON.stringify(stops),
+        JSON.stringify(stops), // ✅ Corrigido
         distancia_km,
         duracao_min,
         valor_final,
@@ -214,7 +215,7 @@ exports.getById = async (req, res) => {
 };
 
 // ======================================================
-// 🚗 BUSCAR MOTORISTA
+// 🚕 BUSCAR MOTORISTA
 // ======================================================
 exports.findDriver = async (req, res) => {
   const io = req.app.get("io");
@@ -439,8 +440,8 @@ exports.addParada = async (req, res) => {
 
     const corrida = corridaResult.rows[0];
     const paradas = corrida.paradas
-      ? [...corrida.paradas, { lat, lng, nome }]
-      : [{ lat, lng, nome }];
+      ? [...corrida.paradas, { latitude: lat, longitude: lng, nome }]
+      : [{ latitude: lat, longitude: lng, nome }];
 
     const origemCoordsFix = {
       latitude: corrida.origem_lat,
@@ -464,7 +465,7 @@ exports.addParada = async (req, res) => {
 
     const updated = await pool.query(
       `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [paradas, distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id] // ✅ Corrigido
     );
 
     const corridaAtualizada = updated.rows[0];
@@ -519,7 +520,7 @@ exports.updateParadas = async (req, res) => {
 
     const updated = await pool.query(
       `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [paradas, distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id] // ✅ Corrigido
     );
 
     const corridaAtualizada = updated.rows[0];
@@ -535,6 +536,3 @@ exports.updateParadas = async (req, res) => {
     res.status(500).json({ error: "Erro ao atualizar paradas", details: err.message });
   }
 };
-
-// Exporta o pool para uso externo
-exports.pool = pool;
