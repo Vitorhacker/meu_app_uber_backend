@@ -1,3 +1,4 @@
+// src/routes/corridaRoutes.js
 const express = require("express");
 const corridaController = require("../controllers/corridaController");
 const { verifyToken } = require("../middlewares/authMiddleware");
@@ -35,5 +36,8 @@ router.post("/:id/paradas", corridaController.addParada);
 
 // 🟢 ATUALIZAR PARADAS
 router.put("/:id/paradas", corridaController.updateParadas);
+
+// 🏷️ ATUALIZAR CATEGORIA
+router.put("/:id/categoria", corridaController.updateCategoria);
 
 module.exports = router;

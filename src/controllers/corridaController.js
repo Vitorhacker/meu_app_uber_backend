@@ -148,7 +148,7 @@ exports.create = async (req, res) => {
         destinoCoordsFix.latitude,
         destinoCoordsFix.longitude,
         category,
-        JSON.stringify(stops), // ✅ Corrigido
+        JSON.stringify(stops),
         distancia_km,
         duracao_min,
         valor_final,
@@ -465,7 +465,7 @@ exports.addParada = async (req, res) => {
 
     const updated = await pool.query(
       `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id] // ✅ Corrigido
+      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
@@ -520,7 +520,7 @@ exports.updateParadas = async (req, res) => {
 
     const updated = await pool.query(
       `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id] // ✅ Corrigido
+      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
@@ -534,5 +534,56 @@ exports.updateParadas = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao atualizar paradas", details: err.message });
+  }
+};
+
+// ======================================================
+// 🏷️ ATUALIZAR CATEGORIA
+// ======================================================
+exports.updateCategoria = async (req, res) => {
+  const io = req.app.get("io");
+  try {
+    const { category } = req.body;
+    if (!category)
+      return res.status(400).json({ error: "Categoria não informada" });
+
+    const corridaResult = await pool.query(
+      "SELECT * FROM corridas WHERE id=$1",
+      [req.params.id]
+    );
+    if (!corridaResult.rows.length)
+      return res.status(404).json({ error: "Corrida não encontrada" });
+
+    const corrida = corridaResult.rows[0];
+
+    const paradas = Array.isArray(corrida.paradas) ? corrida.paradas : [];
+    const distancia_km = parseFloat(corrida.distancia) || 10;
+    const duracao_min = parseFloat(corrida.duracao) || 20;
+
+    const valor_final = calcularValor(
+      category,
+      distancia_km,
+      duracao_min,
+      paradas.length,
+      new Date()
+    );
+
+    const updated = await pool.query(
+      `UPDATE corridas SET category=$1, valor_estimado=$2 WHERE id=$3 RETURNING *`,
+      [category, valor_final, req.params.id]
+    );
+
+    const corridaAtualizada = updated.rows[0];
+
+    emitCorridaUpdate(io, req.params.id, {
+      corrida: corridaAtualizada,
+      status: corridaAtualizada.status,
+      message: "Categoria atualizada",
+    });
+
+    res.json({ message: "Categoria atualizada", corrida: corridaAtualizada });
+  } catch (err) {
+    console.error("❌ [CorridaController][UPDATE CATEGORIA] Erro:", err);
+    res.status(500).json({ error: "Erro ao atualizar categoria", details: err.message });
   }
 };
