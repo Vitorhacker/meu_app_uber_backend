@@ -2,6 +2,7 @@
 const pool = require("../db");
 const { calcularValor } = require("../utils/tarifas");
 const axios = require("axios");
+const { v4: uuidv4 } = require("uuid");
 
 const OSRM_BASE_URL = process.env.OSRM_URL || "http://router.project-osrm.org/route/v1/driving";
 
@@ -11,18 +12,14 @@ const OSRM_BASE_URL = process.env.OSRM_URL || "http://router.project-osrm.org/ro
 async function calcularRota(origemCoords, destinoCoords, stops = []) {
   try {
     const coords = [`${origemCoords.longitude},${origemCoords.latitude}`];
-
     stops.forEach((stop) => {
       if (stop.latitude != null && stop.longitude != null) {
         coords.push(`${stop.longitude},${stop.latitude}`);
       }
     });
-
     coords.push(`${destinoCoords.longitude},${destinoCoords.latitude}`);
 
-    const url = `${OSRM_BASE_URL}/${coords.join(
-      ";"
-    )}?overview=full&geometries=geojson&steps=true`;
+    const url = `${OSRM_BASE_URL}/${coords.join(";")}?overview=full&geometries=geojson&steps=true`;
     const res = await axios.get(url);
 
     if (res.data.routes?.length) {
@@ -110,6 +107,15 @@ exports.create = async (req, res) => {
       ? stops.filter((s) => s.latitude != null && s.longitude != null)
       : [];
 
+    // Adiciona id e icon às paradas
+    stops = stops.map(s => ({
+      id: s.id || uuidv4(),
+      latitude: s.latitude,
+      longitude: s.longitude,
+      nome: s.nome,
+      icon: s.icon || "stop",
+    }));
+
     let horarioPartidaDate = new Date();
     if (horario_partida) {
       const parsed = new Date(horario_partida);
@@ -160,13 +166,19 @@ exports.create = async (req, res) => {
 
     const corrida = result.rows[0];
 
+    const categorias = ["FlashHatch", "FlashPlus", "FlashPremium"];
+    const valores = {};
+    categorias.forEach(cat => {
+      valores[cat] = calcularValor(cat, distancia_km, duracao_min, stops.length, new Date());
+    });
+
     emitCorridaUpdate(io, corrida.id, {
       status: "criada",
-      corrida,
+      corrida: { ...corrida, valores },
       message: "Corrida criada",
     });
 
-    return res.status(201).json({ message: "Corrida criada", corrida });
+    return res.status(201).json({ message: "Corrida criada", corrida: { ...corrida, valores } });
   } catch (err) {
     console.error("❌ [CorridaController][CREATE] Erro ao criar corrida:", err);
     return res
@@ -187,30 +199,24 @@ exports.getById = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
-
     const distancia = parseFloat(corrida.distancia) || 0;
     const duracao = parseFloat(corrida.duracao) || 0;
     const stops = Array.isArray(corrida.paradas) ? corrida.paradas.length : 0;
     const data = new Date(corrida.horario_partida || new Date());
 
-    const valor_hatch = calcularValor("FlashHatch", distancia, duracao, stops, data);
-    const valor_plus = calcularValor("FlashPlus", distancia, duracao, stops, data);
-    const valor_premium = calcularValor("FlashPremium", distancia, duracao, stops, data);
+    const categorias = ["FlashHatch", "FlashPlus", "FlashPremium"];
+    const valores = {};
+    categorias.forEach(cat => {
+      valores[cat] = calcularValor(cat, distancia, duracao, stops, data);
+    });
 
-    return res.json({
+    res.json({
       message: "Corrida encontrada",
-      corrida: {
-        ...corrida,
-        valor_hatch,
-        valor_plus,
-        valor_premium,
-      },
+      corrida: { ...corrida, valores },
     });
   } catch (err) {
     console.error("❌ [CorridaController][GET] Erro ao buscar corrida:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao buscar corrida", details: err.message });
+    res.status(500).json({ error: "Erro ao buscar corrida", details: err.message });
   }
 };
 
@@ -235,12 +241,10 @@ exports.findDriver = async (req, res) => {
       message: "Procurando motorista",
     });
 
-    return res.json({ message: "Busca por motorista iniciada", corrida });
+    res.json({ message: "Busca por motorista iniciada", corrida });
   } catch (err) {
     console.error("❌ [CorridaController][FIND DRIVER] Erro:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao iniciar busca", details: err.message });
+    res.status(500).json({ error: "Erro ao iniciar busca", details: err.message });
   }
 };
 
@@ -279,12 +283,10 @@ exports.accept = async (req, res) => {
       message: "Motorista a caminho",
     });
 
-    return res.json({ message: "Corrida aceita pelo motorista", corrida });
+    res.json({ message: "Corrida aceita pelo motorista", corrida });
   } catch (err) {
     console.error("❌ [CorridaController][ACCEPT] Erro:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao aceitar corrida", details: err.message });
+    res.status(500).json({ error: "Erro ao aceitar corrida", details: err.message });
   }
 };
 
@@ -309,12 +311,10 @@ exports.driverArrived = async (req, res) => {
       message: "Motorista chegou",
     });
 
-    return res.json({ message: "Motorista chegou", corrida });
+    res.json({ message: "Motorista chegou", corrida });
   } catch (err) {
     console.error("❌ [CorridaController][ARRIVED] Erro:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao atualizar chegada", details: err.message });
+    res.status(500).json({ error: "Erro ao atualizar chegada", details: err.message });
   }
 };
 
@@ -333,7 +333,6 @@ exports.start = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = result.rows[0];
-
     emitCorridaUpdate(io, corrida.id, {
       status: "em_andamento",
       corrida,
@@ -382,12 +381,10 @@ exports.finish = async (req, res) => {
       message: "Corrida finalizada",
     });
 
-    return res.json({ message: "Corrida finalizada", corrida });
+    res.json({ message: "Corrida finalizada", corrida });
   } catch (err) {
     console.error("❌ [CorridaController][FINISH] Erro:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao finalizar corrida", details: err.message });
+    res.status(500).json({ error: "Erro ao finalizar corrida", details: err.message });
   }
 };
 
@@ -412,12 +409,10 @@ exports.cancel = async (req, res) => {
       message: "Corrida cancelada",
     });
 
-    return res.json({ message: "Corrida cancelada", corrida });
+    res.json({ message: "Corrida cancelada", corrida });
   } catch (err) {
     console.error("❌ [CorridaController][CANCEL] Erro:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao cancelar corrida", details: err.message });
+    res.status(500).json({ error: "Erro ao cancelar corrida", details: err.message });
   }
 };
 
@@ -439,9 +434,18 @@ exports.addParada = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = corridaResult.rows[0];
+
     const paradas = corrida.paradas
-      ? [...corrida.paradas, { latitude: lat, longitude: lng, nome }]
-      : [{ latitude: lat, longitude: lng, nome }];
+      ? [...corrida.paradas]
+      : [];
+
+    paradas.push({
+      id: uuidv4(),
+      latitude: lat,
+      longitude: lng,
+      nome,
+      icon: "stop",
+    });
 
     const origemCoordsFix = {
       latitude: corrida.origem_lat,
@@ -455,27 +459,26 @@ exports.addParada = async (req, res) => {
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, paradas);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
-    const valor_final = calcularValor(
-      corrida.category,
-      distancia_km,
-      duracao_min,
-      paradas.length,
-      new Date()
-    );
+
+    const categorias = ["FlashHatch", "FlashPlus", "FlashPremium"];
+    const valores = {};
+    categorias.forEach(cat => {
+      valores[cat] = calcularValor(cat, distancia_km, duracao_min, paradas.length, new Date());
+    });
 
     const updated = await pool.query(
       `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+      [JSON.stringify(paradas), distancia_km, duracao_min, valores[corrida.category], rota?.geojson || null, req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
     emitCorridaUpdate(io, req.params.id, {
-      corrida: corridaAtualizada,
+      corrida: { ...corridaAtualizada, valores },
       status: corridaAtualizada.status,
       message: "Parada adicionada",
     });
 
-    res.json({ message: "Parada adicionada", corrida: corridaAtualizada });
+    res.json({ message: "Parada adicionada", corrida: { ...corridaAtualizada, valores } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao adicionar parada", details: err.message });
@@ -485,9 +488,17 @@ exports.addParada = async (req, res) => {
 exports.updateParadas = async (req, res) => {
   const io = req.app.get("io");
   try {
-    const { paradas } = req.body;
+    let { paradas } = req.body;
     if (!Array.isArray(paradas))
       return res.status(400).json({ error: "Paradas inválidas" });
+
+    paradas = paradas.map(p => ({
+      id: p.id || uuidv4(),
+      latitude: p.latitude,
+      longitude: p.longitude,
+      nome: p.nome,
+      icon: p.icon || "stop",
+    }));
 
     const corridaResult = await pool.query(
       "SELECT * FROM corridas WHERE id=$1",
@@ -510,27 +521,26 @@ exports.updateParadas = async (req, res) => {
     const rota = await calcularRota(origemCoordsFix, destinoCoordsFix, paradas);
     const distancia_km = rota?.distancia / 1000 || 10;
     const duracao_min = rota?.duracao / 60 || 20;
-    const valor_final = calcularValor(
-      corrida.category,
-      distancia_km,
-      duracao_min,
-      paradas.length,
-      new Date()
-    );
+
+    const categorias = ["FlashHatch", "FlashPlus", "FlashPremium"];
+    const valores = {};
+    categorias.forEach(cat => {
+      valores[cat] = calcularValor(cat, distancia_km, duracao_min, paradas.length, new Date());
+    });
 
     const updated = await pool.query(
       `UPDATE corridas SET paradas=$1, distancia=$2, duracao=$3, valor_estimado=$4, rota_geojson=$5 WHERE id=$6 RETURNING *`,
-      [JSON.stringify(paradas), distancia_km, duracao_min, valor_final, rota?.geojson || null, req.params.id]
+      [JSON.stringify(paradas), distancia_km, duracao_min, valores[corrida.category], rota?.geojson || null, req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
     emitCorridaUpdate(io, req.params.id, {
-      corrida: corridaAtualizada,
+      corrida: { ...corridaAtualizada, valores },
       status: corridaAtualizada.status,
       message: "Paradas atualizadas",
     });
 
-    res.json({ message: "Paradas atualizadas", corrida: corridaAtualizada });
+    res.json({ message: "Paradas atualizadas", corrida: { ...corridaAtualizada, valores } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao atualizar paradas", details: err.message });
@@ -538,14 +548,14 @@ exports.updateParadas = async (req, res) => {
 };
 
 // ======================================================
-// 🏷️ ATUALIZAR CATEGORIA
+// 🔄 ATUALIZAR CATEGORY
 // ======================================================
-exports.updateCategoria = async (req, res) => {
+exports.updateCategory = async (req, res) => {
   const io = req.app.get("io");
   try {
     const { category } = req.body;
     if (!category)
-      return res.status(400).json({ error: "Categoria não informada" });
+      return res.status(400).json({ error: "Category inválida" });
 
     const corridaResult = await pool.query(
       "SELECT * FROM corridas WHERE id=$1",
@@ -555,35 +565,31 @@ exports.updateCategoria = async (req, res) => {
       return res.status(404).json({ error: "Corrida não encontrada" });
 
     const corrida = corridaResult.rows[0];
+    const stops = Array.isArray(corrida.paradas) ? corrida.paradas.length : 0;
+    const distancia_km = corrida.distancia || 10;
+    const duracao_min = corrida.duracao || 20;
 
-    const paradas = Array.isArray(corrida.paradas) ? corrida.paradas : [];
-    const distancia_km = parseFloat(corrida.distancia) || 10;
-    const duracao_min = parseFloat(corrida.duracao) || 20;
-
-    const valor_final = calcularValor(
-      category,
-      distancia_km,
-      duracao_min,
-      paradas.length,
-      new Date()
-    );
+    const categorias = ["FlashHatch", "FlashPlus", "FlashPremium"];
+    const valores = {};
+    categorias.forEach(cat => {
+      valores[cat] = calcularValor(cat, distancia_km, duracao_min, stops, new Date());
+    });
 
     const updated = await pool.query(
       `UPDATE corridas SET category=$1, valor_estimado=$2 WHERE id=$3 RETURNING *`,
-      [category, valor_final, req.params.id]
+      [category, valores[category], req.params.id]
     );
 
     const corridaAtualizada = updated.rows[0];
-
     emitCorridaUpdate(io, req.params.id, {
-      corrida: corridaAtualizada,
+      corrida: { ...corridaAtualizada, valores },
       status: corridaAtualizada.status,
       message: "Categoria atualizada",
     });
 
-    res.json({ message: "Categoria atualizada", corrida: corridaAtualizada });
+    res.json({ message: "Categoria atualizada", corrida: { ...corridaAtualizada, valores } });
   } catch (err) {
-    console.error("❌ [CorridaController][UPDATE CATEGORIA] Erro:", err);
+    console.error(err);
     res.status(500).json({ error: "Erro ao atualizar categoria", details: err.message });
   }
 };

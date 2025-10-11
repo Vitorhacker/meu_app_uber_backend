@@ -1,43 +1,58 @@
-// src/routes/corridaRoutes.js
+// src/routes/corridasRoutes.js
 const express = require("express");
+const router = express.Router();
 const corridaController = require("../controllers/corridaController");
 const { verifyToken } = require("../middlewares/authMiddleware");
-const router = express.Router();
 
-// Todas as rotas exigem usuário autenticado
-router.use(verifyToken);
+// ======================================================
+// 🚕 CRIAR CORRIDA
+// ======================================================
+router.post("/", verifyToken, corridaController.create);
 
-// 🟢 Criar corrida
-router.post("/", corridaController.create);
+// ======================================================
+// 🔍 BUSCAR CORRIDA PELO ID
+// ======================================================
+router.get("/:id", verifyToken, corridaController.getById);
 
-// 🧭 Buscar corrida pelo ID
-router.get("/:id", corridaController.getById);
+// ======================================================
+// 🚕 BUSCAR MOTORISTA
+// ======================================================
+router.post("/:id/findDriver", verifyToken, corridaController.findDriver);
 
-// 🚕 Iniciar busca de motorista
-router.post("/:id/findDriver", corridaController.findDriver);
+// ======================================================
+// 🚘 MOTORISTA ACEITA CORRIDA
+// ======================================================
+router.post("/:id/accept", verifyToken, corridaController.accept);
 
-// 🚗 Motorista aceita corrida
-router.post("/:id/accept", corridaController.accept);
+// ======================================================
+// 🚦 MOTORISTA CHEGOU
+// ======================================================
+router.post("/:id/driverArrived", verifyToken, corridaController.driverArrived);
 
-// 🚦 Motorista chegou
-router.post("/:id/driverArrived", corridaController.driverArrived);
+// ======================================================
+// 🚦 INICIAR CORRIDA
+// ======================================================
+router.post("/:id/start", verifyToken, corridaController.start);
 
-// 🚦 Iniciar corrida
-router.post("/:id/start", corridaController.start);
+// ======================================================
+// 🏁 FINALIZAR CORRIDA
+// ======================================================
+router.post("/:id/finish", verifyToken, corridaController.finish);
 
-// 🏁 Finalizar corrida
-router.post("/:id/finish", corridaController.finish);
+// ======================================================
+// ❌ CANCELAR CORRIDA
+// ======================================================
+router.post("/:id/cancel", verifyToken, corridaController.cancel);
 
-// ❌ Cancelar corrida
-router.post("/:id/cancel", corridaController.cancel);
+// ======================================================
+// 🛑 PARADAS
+// ======================================================
+router.post("/:id/parada", verifyToken, corridaController.addParada);
+router.put("/:id/paradas", verifyToken, corridaController.updateParadas);
 
-// 🟢 ADICIONAR PARADA
-router.post("/:id/paradas", corridaController.addParada);
-
-// 🟢 ATUALIZAR PARADAS
-router.put("/:id/paradas", corridaController.updateParadas);
-
-// 🏷️ ATUALIZAR CATEGORIA
-router.put("/:id/categoria", corridaController.updateCategoria);
+// ======================================================
+// 🔄 ATUALIZAR CATEGORY
+// ======================================================
+router.put("/:id/category", verifyToken, corridaController.updateCategory);
 
 module.exports = router;
